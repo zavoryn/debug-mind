@@ -16,7 +16,6 @@ Tools exposed:
 from __future__ import annotations
 
 import json
-import os
 from typing import Optional
 
 from mcp.server.fastmcp import FastMCP

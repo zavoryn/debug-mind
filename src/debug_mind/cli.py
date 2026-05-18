@@ -33,11 +33,11 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-# Load .env before anything else
-load_dotenv()
-
 from debug_mind.memory.store import MemoryStore
 from debug_mind.schemas import DiagnosisResult
+
+# Load .env before anything else
+load_dotenv()
 
 console = Console()
 
@@ -174,9 +174,9 @@ def _stream_diagnose(agent, description: str, error_log: str, environment: dict)
                     detail = inp.get("file_path", "")
                     tool_lines.append(f"  [read_file] {detail}")
                 elif name == "list_project_structure":
-                    tool_lines.append(f"  [list_project_structure]")
+                    tool_lines.append("  [list_project_structure]")
                 elif name == "save_to_memory":
-                    tool_lines.append(f"  [save_to_memory]")
+                    tool_lines.append("  [save_to_memory]")
                 live.update(_render())
 
             elif event_type == "tool_result":
