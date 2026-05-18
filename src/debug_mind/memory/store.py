@@ -231,7 +231,7 @@ def _markdown_to_case(path: Path) -> BugCase | None:
     except Exception:
         return None
 
-    case = BugCase(title="parsed")
+    case = BugCase(title="parsed", symptoms="")
 
     # Extract case_id from backtick
     if m := re.search(r"case_id:\s*`(\w+)`", text):
