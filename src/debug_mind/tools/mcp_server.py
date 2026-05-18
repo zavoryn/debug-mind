@@ -148,19 +148,9 @@ def get_bug_stats() -> str:
 def delete_bug_case(case_id: str) -> str:
     """Delete a bug case from memory by its ID."""
     memory = _get_memory()
-    case = memory.get(case_id)
-    if not case:
+    deleted = memory.delete(case_id)
+    if not deleted:
         return json.dumps({"error": f"Case {case_id} not found"}, ensure_ascii=False)
-
-    md_path = memory.cases_dir / f"{case_id}.md"
-    if md_path.exists():
-        md_path.unlink()
-
-    try:
-        memory.collection.delete(ids=[case_id])
-    except Exception:
-        pass
-
     return json.dumps({"deleted": True, "case_id": case_id}, ensure_ascii=False)
 
 

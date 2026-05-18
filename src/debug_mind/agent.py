@@ -13,8 +13,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Any, Generator
 
 import anthropic
 
@@ -133,14 +132,11 @@ class DiagnosticAgent:
         project_path: str | None = None,
         model: str = "claude-sonnet-4-20250514",
         api_key: str | None = None,
-        on_tool_call: Callable[[str, dict], None] | None = None,
     ):
         self.memory = memory
         self.project_path = project_path
         self.model = model
-        self.on_tool_call = on_tool_call
         self.client = anthropic.Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
-
         self.tools = MEMORY_TOOLS + (CODEBASE_TOOLS if project_path else [])
 
     def diagnose(
@@ -149,107 +145,33 @@ class DiagnosticAgent:
         error_log: str = "",
         environment: dict[str, str] | None = None,
     ) -> DiagnosisResult:
-        """Run the full diagnostic loop on a bug report."""
-        env_str = "\n".join(f"- {k}: {v}" for k, v in (environment or {}).items())
-
-        user_message = f"""## New Bug Report
-
-**Description:** {bug_description}
-
-**Error Log:**
-```
-{error_log or "(no log provided)"}
-```
-
-**Environment:**
-{env_str or "- not specified"}
-{"**Project Path:** " + self.project_path if self.project_path else ""}
-
-Diagnose this bug. Remember: search memory first, then inspect code if available, then save the result."""
-
-        messages: list[dict[str, Any]] = [{"role": "user", "content": user_message}]
-        diagnosis_steps: list[str] = []
-        saved_case_id: str | None = None
-        similar_case_ids: list[str] = []
-
-        max_turns = 20
-        for turn in range(max_turns):
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=4096,
-                system=SYSTEM_PROMPT,
-                tools=self.tools,
-                messages=messages,
-            )
-
-            assistant_content = response.content
-            messages.append({"role": "assistant", "content": assistant_content})
-
-            # Emit any text the agent produced this turn
-            for block in assistant_content:
-                if block.type == "text" and self.on_tool_call:
-                    pass  # text is streamed via the final output
-
-            tool_use_blocks = [b for b in assistant_content if b.type == "tool_use"]
-            if not tool_use_blocks:
-                break
-
-            tool_results = []
-            for block in tool_use_blocks:
-                if self.on_tool_call:
-                    self.on_tool_call(block.name, block.input)
-
-                result, side_effect = self._execute_tool(block.name, block.input)
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": json.dumps(result, ensure_ascii=False),
-                })
-
-                step_desc = f"{block.name}({json.dumps(block.input, ensure_ascii=False)[:120]})"
-                diagnosis_steps.append(step_desc)
-
-                if side_effect == "search":
-                    similar_case_ids = [c["id"] for c in result.get("cases", [])]
-                elif side_effect == "save":
-                    saved_case_id = result.get("case_id")
-
-            messages.append({"role": "user", "content": tool_results})
-
-        # Extract final text
-        final_text = "\n".join(
-            b.text for b in assistant_content if hasattr(b, "text") and b.type == "text"
-        )
-
-        saved_case = self.memory.get(saved_case_id) if saved_case_id else None
-
-        return DiagnosisResult(
-            case_id=saved_case.id if saved_case else "unknown",
-            root_cause=saved_case.root_cause if saved_case else final_text,
-            confidence=saved_case is not None,
-            diagnosis_steps=diagnosis_steps,
-            fix_suggestion=saved_case.fix_suggestion if saved_case else "",
-            similar_cases_found=len(similar_case_ids),
-            reasoning=final_text,
-        )
+        """Run the full diagnostic loop. Returns the final DiagnosisResult."""
+        result = None
+        for event_type, data in self._run_loop(bug_description, error_log, environment):
+            if event_type == "done":
+                result = data
+        return result  # type: ignore[return-value]
 
     def diagnose_stream(
         self,
         bug_description: str,
         error_log: str = "",
         environment: dict[str, str] | None = None,
-    ):
-        """Streaming variant — yields (event_type, data) tuples as the agent works.
+    ) -> Generator[tuple[str, Any], None, None]:
+        """Streaming variant — yields (event_type, data) tuples.
 
         Yields:
-            ("thinking", text) — agent's text output
-            ("tool_call", {"name": ..., "input": ...}) — tool being called
-            ("tool_result", {"name": ..., "result": ...}) — tool execution result
-            ("done", DiagnosisResult) — final result
+            ("thinking", str)             — agent's text output
+            ("tool_call", dict)           — {"name": ..., "input": ...}
+            ("tool_result", dict)         — {"name": ..., "result": ...}
+            ("done", DiagnosisResult)     — final result
         """
-        env_str = "\n".join(f"- {k}: {v}" for k, v in (environment or {}).items())
+        yield from self._run_loop(bug_description, error_log, environment, stream=True)
 
-        user_message = f"""## New Bug Report
+    def _build_user_message(self, bug_description: str, error_log: str, environment: dict[str, str] | None) -> str:
+        env_str = "\n".join(f"- {k}: {v}" for k, v in (environment or {}).items())
+        project_line = f"\n**Project Path:** {self.project_path}" if self.project_path else ""
+        return f"""## New Bug Report
 
 **Description:** {bug_description}
 
@@ -259,43 +181,61 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
 ```
 
 **Environment:**
-{env_str or "- not specified"}
-{"**Project Path:** " + self.project_path if self.project_path else ""}
+{env_str or "- not specified"}{project_line}
 
 Diagnose this bug. Remember: search memory first, then inspect code if available, then save the result."""
 
+    def _run_loop(
+        self,
+        bug_description: str,
+        error_log: str,
+        environment: dict[str, str] | None,
+        stream: bool = False,
+    ) -> Generator[tuple[str, Any], None, None]:
+        """Core ReAct loop shared by diagnose() and diagnose_stream()."""
+        user_message = self._build_user_message(bug_description, error_log, environment)
         messages: list[dict[str, Any]] = [{"role": "user", "content": user_message}]
         diagnosis_steps: list[str] = []
         saved_case_id: str | None = None
         similar_case_ids: list[str] = []
 
         max_turns = 20
-        for turn in range(max_turns):
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=4096,
-                system=SYSTEM_PROMPT,
-                tools=self.tools,
-                messages=messages,
-            )
+        for _ in range(max_turns):
+            try:
+                response = self.client.messages.create(
+                    model=self.model,
+                    max_tokens=4096,
+                    system=SYSTEM_PROMPT,
+                    tools=self.tools,
+                    messages=messages,
+                )
+            except anthropic.APIError as e:
+                if stream:
+                    yield ("thinking", f"\n[API Error: {e.message}]")
+                break
 
             assistant_content = response.content
             messages.append({"role": "assistant", "content": assistant_content})
 
+            # Emit text blocks
             for block in assistant_content:
-                if block.type == "text":
+                if block.type == "text" and stream:
                     yield ("thinking", block.text)
 
             tool_use_blocks = [b for b in assistant_content if b.type == "tool_use"]
             if not tool_use_blocks:
                 break
 
+            # Execute tools
             tool_results = []
             for block in tool_use_blocks:
-                yield ("tool_call", {"name": block.name, "input": block.input})
+                if stream:
+                    yield ("tool_call", {"name": block.name, "input": block.input})
 
                 result, side_effect = self._execute_tool(block.name, block.input)
-                yield ("tool_result", {"name": block.name, "result": result})
+
+                if stream:
+                    yield ("tool_result", {"name": block.name, "result": result})
 
                 tool_results.append({
                     "type": "tool_result",
@@ -313,25 +253,26 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
 
             messages.append({"role": "user", "content": tool_results})
 
+        # Build final result
         final_text = "\n".join(
             b.text for b in assistant_content if hasattr(b, "text") and b.type == "text"
         )
-
         saved_case = self.memory.get(saved_case_id) if saved_case_id else None
 
-        result = DiagnosisResult(
+        diag = DiagnosisResult(
             case_id=saved_case.id if saved_case else "unknown",
             root_cause=saved_case.root_cause if saved_case else final_text,
-            confidence=saved_case is not None,
+            confidence=1.0 if saved_case else 0.0,
             diagnosis_steps=diagnosis_steps,
             fix_suggestion=saved_case.fix_suggestion if saved_case else "",
             similar_cases_found=len(similar_case_ids),
             reasoning=final_text,
         )
 
-        yield ("done", result)
+        yield ("done", diag)
 
     def _execute_tool(self, name: str, params: dict) -> tuple[dict, str | None]:
+        """Execute a single tool call. Returns (result, side_effect_tag)."""
         if name == "search_memory":
             results = self.memory.search(query=params["query"], top_k=params.get("top_k", 5))
             return {

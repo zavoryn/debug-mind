@@ -26,7 +26,7 @@ from pathlib import Path
 
 import click
 from dotenv import load_dotenv
-from rich.console import Console
+from rich.console import Console, Group
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -139,47 +139,62 @@ def _stream_diagnose(agent, description: str, error_log: str, environment: dict)
     """Stream the agent's thinking and tool calls in real-time."""
     result = None
 
-    output_text = Text()
+    thinking_parts: list[str] = []
+    tool_lines: list[str] = []
 
-    with Live(output_text, console=console, refresh_per_second=4, vertical_overflow="visible") as live:
+    def _render():
+        parts = []
+        if tool_lines:
+            parts.append(Text("\n".join(tool_lines), style="dim cyan"))
+        if thinking_parts:
+            combined = "\n".join(thinking_parts)
+            parts.append(Markdown(combined))
+        return Group(*parts) if parts else Text("")
+
+    with Live(_render(), console=console, refresh_per_second=4, vertical_overflow="visible") as live:
         for event_type, data in agent.diagnose_stream(
             bug_description=description,
             error_log=error_log,
             environment=environment,
         ):
             if event_type == "thinking":
-                output_text.append(data)
-                live.update(output_text)
+                thinking_parts.append(data)
+                live.update(_render())
 
             elif event_type == "tool_call":
                 name = data["name"]
                 inp = data["input"]
-                tool_label = f"\n[tool] {name}"
                 if name == "search_memory":
-                    tool_label += f'("{inp.get("query", "")[:50]}...")'
+                    detail = inp.get("query", "")[:50]
+                    tool_lines.append(f"  [search_memory] {detail}...")
                 elif name == "search_code":
-                    tool_label += f'("{inp.get("pattern", "")[:50]}...")'
+                    detail = inp.get("pattern", "")[:50]
+                    tool_lines.append(f"  [search_code] {detail}...")
                 elif name == "read_file":
-                    tool_label += f'("{inp.get("file_path", "")}")'
-                output_text.append(f"\n[bold magenta]{tool_label}[/bold magenta]")
-                live.update(output_text)
+                    detail = inp.get("file_path", "")
+                    tool_lines.append(f"  [read_file] {detail}")
+                elif name == "list_project_structure":
+                    tool_lines.append(f"  [list_project_structure]")
+                elif name == "save_to_memory":
+                    tool_lines.append(f"  [save_to_memory]")
+                live.update(_render())
 
             elif event_type == "tool_result":
                 res = data["result"]
                 name = data["name"]
                 if name == "search_memory":
                     found = res.get("found", 0)
-                    output_text.append(f"\n  [dim]→ {found} similar case(s) found[/dim]")
+                    tool_lines.append(f"    -> {found} similar case(s)")
                 elif name == "search_code":
                     found = res.get("found", 0)
-                    output_text.append(f"\n  [dim]→ {found} code matches[/dim]")
+                    tool_lines.append(f"    -> {found} code matches")
                 elif name == "read_file":
                     lines = res.get("total_lines", 0)
-                    output_text.append(f"\n  [dim]→ Read {lines} lines[/dim]")
+                    tool_lines.append(f"    -> {lines} lines read")
                 elif name == "save_to_memory":
                     cid = res.get("case_id", "?")
-                    output_text.append(f"\n  [dim]→ Saved as {cid}[/dim]")
-                live.update(output_text)
+                    tool_lines.append(f"    -> saved as {cid}")
+                live.update(_render())
 
             elif event_type == "done":
                 result = data

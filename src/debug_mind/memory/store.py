@@ -15,7 +15,7 @@ import json
 import os
 import re
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 import chromadb
 
@@ -43,7 +43,7 @@ class MemoryStore:
 
     def save(self, case: BugCase) -> BugCase:
         """Persist a bug case to both vector store and Markdown file."""
-        case.updated_at = datetime.now()
+        case.updated_at = datetime.now(timezone.utc)
 
         self._save_to_vector(case)
         self._save_to_markdown(case)
@@ -110,24 +110,15 @@ class MemoryStore:
         return search_results
 
     def search_by_tags(self, tags: list[str], top_k: int = 10) -> list[SearchResult]:
-        """Filter cases by tags using ChromaDB's metadata filtering."""
-        count = self.collection.count()
-        if count == 0:
-            return []
-
-        results = self.collection.get(
-            where={"tags": {"$contains": json.dumps(tags)}},
-            include=["metadatas", "documents"],
-            limit=top_k,
-        )
-
-        out = []
-        for i, case_id in enumerate(results["ids"]):
-            md_path = self.cases_dir / f"{case_id}.md"
-            case = _markdown_to_case(md_path) if md_path.exists() else None
-            if case:
-                out.append(SearchResult(case=case, score=1.0))
-        return out
+        """Filter cases by tags — matches if ANY tag overlaps."""
+        all_cases = self.list_recent(limit=10000)
+        results = []
+        for case in all_cases:
+            if any(t in case.tags for t in tags):
+                results.append(SearchResult(case=case, score=1.0))
+                if len(results) >= top_k:
+                    break
+        return results
 
     # ── Read ───────────────────────────────────────────────────────
 
@@ -164,6 +155,20 @@ class MemoryStore:
             by_status=by_status,
             top_tags=top_tags,
         )
+
+    # ── Delete ────────────────────────────────────────────────────
+
+    def delete(self, case_id: str) -> bool:
+        """Delete a bug case from both vector store and Markdown."""
+        md_path = self.cases_dir / f"{case_id}.md"
+        if not md_path.exists():
+            return False
+        md_path.unlink()
+        try:
+            self.collection.delete(ids=[case_id])
+        except Exception:
+            pass
+        return True
 
     # ── Rebuild ────────────────────────────────────────────────────
 

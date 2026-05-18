@@ -162,13 +162,13 @@ def _build_grep_cmd(pattern: str, project_path: str, file_type: str, max_results
         cmd.extend(["-m", str(max_results), pattern, project_path])
         return cmd
 
-    if _has_cmd("findstr"):
-        # Windows fallback
+    if os.name == "nt" and _has_cmd("findstr"):
+        # Windows: findstr /s = recursive, /n = line numbers
         cmd = ["findstr", "/n", "/s", pattern]
         if file_type:
-            cmd.extend([f"*.{file_type}"])
+            cmd.append(f"*.{file_type}")
         else:
-            cmd.extend(["*.*"])
+            cmd.append("*.*")
         return cmd
 
     return None

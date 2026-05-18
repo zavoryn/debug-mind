@@ -12,6 +12,7 @@
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" />
   <img src="https://img.shields.io/badge/MCP-compatible-purple" alt="MCP Compatible" />
   <img src="https://img.shields.io/badge/RAG-powered-orange" alt="RAG Powered" />
+  <img src="https://img.shields.io/github/actions/workflow/status/zavoryn/debug-mind/ci.yml?branch=master" alt="CI" />
 </p>
 
 ---
@@ -204,6 +205,10 @@ debug-mind/
 │   └── test_memory_store.py
 └── pyproject.toml
 ```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, code style, and how to add bug cases or skills.
 
 ## Development
 
