@@ -12,7 +12,6 @@ from debug_mind.memory.store import MemoryStore, _case_to_markdown, _markdown_to
 def _has_rg() -> bool:
     """Check if ripgrep is available and functional."""
     import subprocess
-    import os
     try:
         result = subprocess.run(
             ["rg", "--version"],
