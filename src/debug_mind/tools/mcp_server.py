@@ -10,12 +10,14 @@ Tools exposed:
   - save_bug_case: Save a new diagnosed case to memory
   - list_recent_bugs: List recently diagnosed cases
   - get_bug_stats: Get memory store statistics
+  - diagnose_bug: Run full diagnosis (optionally on a codebase)
 """
 
 from __future__ import annotations
 
 import json
-import sys
+import os
+from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
@@ -72,9 +74,9 @@ def save_bug_case(
     fix_suggestion: str,
     error_log: str = "",
     severity: str = "medium",
-    tags: list[str] | None = None,
-    environment: dict[str, str] | None = None,
-    diagnosis_steps: list[str] | None = None,
+    tags: Optional[list[str]] = None,
+    environment: Optional[dict[str, str]] = None,
+    diagnosis_steps: Optional[list[str]] = None,
 ) -> str:
     """Save a diagnosed bug case to the experiential memory.
 
@@ -140,6 +142,26 @@ def get_bug_stats() -> str:
         indent=2,
         ensure_ascii=False,
     )
+
+
+@mcp.tool()
+def delete_bug_case(case_id: str) -> str:
+    """Delete a bug case from memory by its ID."""
+    memory = _get_memory()
+    case = memory.get(case_id)
+    if not case:
+        return json.dumps({"error": f"Case {case_id} not found"}, ensure_ascii=False)
+
+    md_path = memory.cases_dir / f"{case_id}.md"
+    if md_path.exists():
+        md_path.unlink()
+
+    try:
+        memory.collection.delete(ids=[case_id])
+    except Exception:
+        pass
+
+    return json.dumps({"deleted": True, "case_id": case_id}, ensure_ascii=False)
 
 
 if __name__ == "__main__":

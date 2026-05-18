@@ -1,34 +1,51 @@
 """CLI interface for DebugMind — diagnose bugs from the terminal.
 
 Usage:
+    # Basic diagnosis (memory only)
     debug-mind diagnose "NPE on login endpoint"
-    debug-mind diagnose --log error.log --env "java=17,framework=Spring Boot 3.2" "Service crashes on startup"
+
+    # With codebase access (real code search!)
+    debug-mind diagnose --project /path/to/project "Service crashes on startup"
+
+    # With log file and environment
+    debug-mind diagnose --project ./my-app --log error.log --env "java=17,framework=Spring Boot 3.2" "NPE in UserService"
+
+    # Memory management
     debug-mind search "redis connection timeout"
-    debug-mind list [--limit 10]
+    debug-mind list
     debug-mind stats
     debug-mind rebuild
+    debug-mind serve
 """
 
 from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 import click
+from dotenv import load_dotenv
 from rich.console import Console
+from rich.live import Live
+from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
-from rich.markdown import Markdown
-from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.text import Text
+
+# Load .env before anything else
+load_dotenv()
 
 from debug_mind.memory.store import MemoryStore
-from debug_mind.schemas import BugCase, Severity
+from debug_mind.schemas import DiagnosisResult
 
 console = Console()
 
+DEFAULT_MEMORY_DIR = Path(os.environ.get("DEBUG_MIND_MEMORY_DIR", "memory"))
+
 
 def _get_memory() -> MemoryStore:
-    return MemoryStore()
+    return MemoryStore(memory_dir=DEFAULT_MEMORY_DIR)
 
 
 @click.group()
@@ -40,11 +57,13 @@ def main():
 
 @main.command()
 @click.argument("description")
-@click.option("--log", "-l", default="", help="Path to error log file or inline log text")
-@click.option("--env", "-e", default="", help="Environment as key=value pairs, comma-separated")
+@click.option("--log", "-l", default="", help="Error log file path or inline log text")
+@click.option("--env", "-e", default="", help="Environment: key=value pairs, comma-separated")
+@click.option("--project", "-p", default="", help="Project root path for codebase access")
 @click.option("--severity", "-s", default="medium", type=click.Choice(["critical", "high", "medium", "low"]))
-def diagnose(description: str, log: str, env: str, severity: str):
-    """Diagnose a bug using AI + memory of past cases."""
+@click.option("--no-stream", is_flag=True, help="Disable streaming output (show spinner instead)")
+def diagnose(description: str, log: str, env: str, project: str, severity: str, no_stream: bool):
+    """Diagnose a bug using AI + memory + optional codebase search."""
     # Parse environment
     environment = {}
     if env:
@@ -57,57 +76,128 @@ def diagnose(description: str, log: str, env: str, severity: str):
     error_log = ""
     if log:
         if os.path.isfile(log):
-            error_log = open(log, encoding="utf-8").read()
+            with open(log, encoding="utf-8") as f:
+                error_log = f.read()
         else:
             error_log = log
 
-    console.print(Panel(f"[bold]{description}[/bold]", title="Bug Report", border_style="red"))
+    # Validate project path
+    project_path = None
+    if project:
+        project = os.path.abspath(project)
+        if not os.path.isdir(project):
+            console.print(f"[red]Error: {project} is not a directory[/red]")
+            sys.exit(1)
+        project_path = project
+
+    console.print(Panel(
+        f"[bold]{description}[/bold]"
+        + (f"\n[dim]Project: {project_path}[/dim]" if project_path else ""),
+        title="Bug Report",
+        border_style="red",
+    ))
 
     memory = _get_memory()
 
-    # Show memory search step
-    with Progress(SpinnerColumn(), TextColumn("[bold blue]Searching memory for similar cases..."), console=console, transient=True) as progress:
-        progress.add_task("search", total=None)
+    # Step 1: Memory search
+    with console.status("[bold blue]Searching memory for similar cases..."):
         similar = memory.search(query=description, top_k=3)
 
     if similar:
         console.print(f"\n[green]Found {len(similar)} similar case(s) in memory:[/green]")
         for r in similar:
-            console.print(f"  • [cyan]{r.case.title}[/cyan] (score: {r.score:.0%}) — {r.case.root_cause[:80]}")
+            console.print(f"  [cyan]{r.case.title}[/cyan] (score: {r.score:.0%})")
+            console.print(f"  [dim]  Root cause: {r.case.root_cause[:100]}[/dim]")
     else:
         console.print("\n[yellow]No similar cases found — performing full diagnosis.[/yellow]")
 
-    # Run diagnosis
+    # Step 2: Run agent
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
-        console.print("[red]Error: ANTHROPIC_API_KEY environment variable not set.[/red]")
-        console.print("Run: export ANTHROPIC_API_KEY=your-key-here")
+        console.print("[red]Error: ANTHROPIC_API_KEY not set.[/red]")
+        console.print("Create a .env file with: ANTHROPIC_API_KEY=your-key-here")
         sys.exit(1)
 
     from debug_mind.agent import DiagnosticAgent
 
-    agent = DiagnosticAgent(memory=memory, api_key=api_key)
+    agent = DiagnosticAgent(memory=memory, project_path=project_path, api_key=api_key)
 
-    with Progress(SpinnerColumn(), TextColumn("[bold blue]Agent is diagnosing..."), console=console, transient=True) as progress:
-        progress.add_task("diagnose", total=None)
-        result = agent.diagnose(
+    if no_stream:
+        with console.status("[bold blue]Agent is diagnosing..."):
+            result = agent.diagnose(
+                bug_description=description,
+                error_log=error_log,
+                environment=environment,
+            )
+        _print_result(result)
+    else:
+        result = _stream_diagnose(agent, description, error_log, environment)
+        _print_result(result)
+
+
+def _stream_diagnose(agent, description: str, error_log: str, environment: dict) -> DiagnosisResult:
+    """Stream the agent's thinking and tool calls in real-time."""
+    result = None
+
+    output_text = Text()
+
+    with Live(output_text, console=console, refresh_per_second=4, vertical_overflow="visible") as live:
+        for event_type, data in agent.diagnose_stream(
             bug_description=description,
             error_log=error_log,
             environment=environment,
-        )
+        ):
+            if event_type == "thinking":
+                output_text.append(data)
+                live.update(output_text)
 
-    # Display result
+            elif event_type == "tool_call":
+                name = data["name"]
+                inp = data["input"]
+                tool_label = f"\n[tool] {name}"
+                if name == "search_memory":
+                    tool_label += f'("{inp.get("query", "")[:50]}...")'
+                elif name == "search_code":
+                    tool_label += f'("{inp.get("pattern", "")[:50]}...")'
+                elif name == "read_file":
+                    tool_label += f'("{inp.get("file_path", "")}")'
+                output_text.append(f"\n[bold magenta]{tool_label}[/bold magenta]")
+                live.update(output_text)
+
+            elif event_type == "tool_result":
+                res = data["result"]
+                name = data["name"]
+                if name == "search_memory":
+                    found = res.get("found", 0)
+                    output_text.append(f"\n  [dim]→ {found} similar case(s) found[/dim]")
+                elif name == "search_code":
+                    found = res.get("found", 0)
+                    output_text.append(f"\n  [dim]→ {found} code matches[/dim]")
+                elif name == "read_file":
+                    lines = res.get("total_lines", 0)
+                    output_text.append(f"\n  [dim]→ Read {lines} lines[/dim]")
+                elif name == "save_to_memory":
+                    cid = res.get("case_id", "?")
+                    output_text.append(f"\n  [dim]→ Saved as {cid}[/dim]")
+                live.update(output_text)
+
+            elif event_type == "done":
+                result = data
+
+    return result
+
+
+def _print_result(result: DiagnosisResult):
+    """Print the final diagnosis result."""
     console.print()
     console.print(Panel(
         f"[bold green]Root Cause:[/bold green]\n{result.root_cause}\n\n"
         f"[bold yellow]Fix Suggestion:[/bold yellow]\n{result.fix_suggestion}\n\n"
-        f"[bold blue]Confidence:[/bold blue] {result.confidence:.0%}\n"
         f"[bold blue]Similar Cases Used:[/bold blue] {result.similar_cases_found}",
-        title=f"Diagnosis Result — {result.case_id}",
+        title=f"Diagnosis — {result.case_id}",
         border_style="green",
     ))
-
-    console.print(f"\n[dim]Case saved to memory with ID: {result.case_id}[/dim]")
+    console.print(f"[dim]Case ID: {result.case_id} | Steps: {len(result.diagnosis_steps)}[/dim]")
 
 
 @main.command()
@@ -122,7 +212,7 @@ def search(query: str, top_k: int):
         console.print("[yellow]No similar bugs found in memory.[/yellow]")
         return
 
-    table = Table(title=f"Search Results for: {query}")
+    table = Table(title=f"Search: {query}")
     table.add_column("Score", style="bold", width=8)
     table.add_column("ID", style="cyan", width=12)
     table.add_column("Title", width=35)
@@ -155,7 +245,7 @@ def list_cases(limit: int):
 
     table = Table(title=f"Recent Bug Cases (showing {len(cases)})")
     table.add_column("ID", style="cyan", width=12)
-    table.add_column("Title", width=35)
+    table.add_column("Title", width=40)
     table.add_column("Severity", width=10)
     table.add_column("Status", width=15)
     table.add_column("Tags", style="dim", width=25)
@@ -167,7 +257,7 @@ def list_cases(limit: int):
         color = severity_colors.get(c.severity.value, "white")
         table.add_row(
             c.id,
-            c.title[:35],
+            c.title[:40],
             f"[{color}]{c.severity.value}[/{color}]",
             c.status.value,
             ", ".join(c.tags[:4]),
@@ -197,8 +287,7 @@ def stats():
 def rebuild():
     """Rebuild the vector index from Markdown files."""
     memory = _get_memory()
-    with Progress(SpinnerColumn(), TextColumn("[bold blue]Rebuilding vector index..."), console=console, transient=True) as progress:
-        progress.add_task("rebuild", total=None)
+    with console.status("[bold blue]Rebuilding vector index..."):
         count = memory.rebuild_index()
     console.print(f"[green]Rebuilt index with {count} cases.[/green]")
 

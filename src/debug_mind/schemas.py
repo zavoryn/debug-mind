@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
@@ -60,8 +60,8 @@ class BugCase(BaseModel):
         default_factory=list,
         description="IDs of similar past cases found during diagnosis",
     )
-    created_at: datetime = Field(default_factory=datetime.now)
-    updated_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_search_text(self) -> str:
         """Build a single text blob for embedding — includes all searchable content."""
@@ -81,7 +81,10 @@ class DiagnosisResult(BaseModel):
 
     case_id: str
     root_cause: str
-    confidence: float = Field(ge=0, le=1, description="Agent's confidence in the diagnosis")
+    confidence: float = Field(
+        ge=0, le=1,
+        description="1.0 if case was saved to memory, 0.0 if agent failed to save",
+    )
     diagnosis_steps: list[str]
     fix_suggestion: str
     similar_cases_found: int = 0

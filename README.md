@@ -63,7 +63,8 @@ DebugMind has **four layers**, each independently useful:
 | Layer | Component | What It Does |
 |-------|-----------|-------------|
 | **Memory** | ChromaDB + Markdown | Hybrid storage — vector search + human-readable files |
-| **Agent** | Claude + Tool Loop | Diagnostic reasoning with injected skills |
+| **Skills** | ripgrep / grep | Real code search, file reading, project structure |
+| **Agent** | Claude + ReAct Loop | Tool-use driven diagnostic reasoning |
 | **Protocol** | MCP Server | Expose memory to any MCP-compatible client |
 | **Interface** | CLI (Rich) | Interactive terminal with colored output |
 
@@ -80,13 +81,17 @@ DebugMind has **four layers**, each independently useful:
 # Install
 pip install -e .
 
-# Set your API key
-export ANTHROPIC_API_KEY=your-key-here
+# Create .env with your API key
+echo "ANTHROPIC_API_KEY=your-key-here" > .env
 
-# Diagnose a bug
-debug-mind diagnose "NullPointerException on UserService.login during peak hours" \
+# Diagnose a bug with codebase access (the real power)
+debug-mind diagnose --project /path/to/your/codebase \
   --log error.log \
-  --env "java=17,framework=Spring Boot 3.2"
+  --env "java=17,framework=Spring Boot 3.2" \
+  "NullPointerException on UserService.login during peak hours"
+
+# Or diagnose without a codebase (memory-only mode)
+debug-mind diagnose "Service returns 500 intermittently"
 
 # Search past cases
 debug-mind search "redis connection timeout"
@@ -189,6 +194,8 @@ debug-mind/
 │   ├── cli.py              # CLI interface (Click + Rich)
 │   ├── memory/
 │   │   └── store.py        # Hybrid memory (ChromaDB + Markdown)
+│   ├── skills/
+│   │   └── codebase.py     # Real code search (ripgrep/grep) + file reading
 │   └── tools/
 │       └── mcp_server.py   # MCP server for external clients
 ├── memory/

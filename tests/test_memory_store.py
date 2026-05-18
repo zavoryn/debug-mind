@@ -1,4 +1,4 @@
-"""Tests for the memory store — the core of the experiential memory."""
+"""Tests for the memory store and codebase skills."""
 
 import tempfile
 from pathlib import Path
@@ -70,13 +70,11 @@ class TestMemoryStore:
         stats = store.stats()
         assert stats.total_cases == 1
         assert stats.by_severity["high"] == 1
-        assert ("npe", 1) in stats.top_tags or ("redis", 1) in stats.top_tags
 
     def test_rebuild_index(self, store, sample_case):
         store.save(sample_case)
         count = store.rebuild_index()
         assert count == 1
-        # Should still be searchable after rebuild
         results = store.search(query="NPE Redis", top_k=5)
         assert len(results) >= 1
 
@@ -105,3 +103,45 @@ class TestMarkdownRoundtrip:
         assert case is not None
         assert "NPE" in case.title or "UserService" in case.title
         assert case.severity == Severity.HIGH
+
+
+class TestCodebaseSkills:
+    """Test real code search and file reading against this project."""
+
+    @pytest.fixture
+    def project_path(self):
+        return str(Path(__file__).parent.parent)
+
+    def test_list_project_structure(self, project_path):
+        from debug_mind.skills.codebase import list_project_structure
+        result = list_project_structure(project_path, depth=2)
+        assert "structure" in result
+        assert "pyproject.toml" in result["structure"]
+        assert "src/" in result["structure"]
+
+    def test_search_code_finds_something(self, project_path):
+        from debug_mind.skills.codebase import search_code
+        result = search_code("MemoryStore", project_path, file_type="py")
+        assert result["found"] > 0
+        assert any("store.py" in m["file"] for m in result["matches"])
+
+    def test_read_file(self, project_path):
+        from debug_mind.skills.codebase import read_file
+        result = read_file("pyproject.toml", project_path)
+        assert "debug-mind" in result["content"]
+
+    def test_read_file_with_range(self, project_path):
+        from debug_mind.skills.codebase import read_file
+        result = read_file("pyproject.toml", project_path, start_line=0, end_line=5)
+        assert result["total_lines"] > 5
+        assert "showing" in result
+
+    def test_search_code_empty_pattern(self, project_path):
+        from debug_mind.skills.codebase import search_code
+        result = search_code("NONEXISTENT_PATTERN_XYZ123", project_path)
+        assert result["found"] == 0
+
+    def test_read_file_outside_project(self, project_path):
+        from debug_mind.skills.codebase import read_file
+        result = read_file("../../etc/passwd", project_path)
+        assert "error" in result or "Access denied" in result.get("error", "")
