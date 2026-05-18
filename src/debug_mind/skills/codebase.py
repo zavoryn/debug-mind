@@ -31,9 +31,9 @@ def search_code(pattern: str, project_path: str, file_type: str = "", max_result
             cwd=project_path,
         )
     except subprocess.TimeoutExpired:
-        return {"error": "Search timed out after 30s", "pattern": pattern}
+        return {"found": 0, "pattern": pattern, "matches": [], "error": "Search timed out"}
     except Exception as e:
-        return {"error": str(e)}
+        return {"found": 0, "pattern": pattern, "matches": [], "error": str(e)}
 
     output = result.stdout.strip()
     if not output:

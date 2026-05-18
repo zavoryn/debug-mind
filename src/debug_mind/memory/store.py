@@ -255,9 +255,9 @@ def _markdown_to_case(path: Path) -> BugCase | None:
     if m := re.search(r"^# (.+)$", text, re.MULTILINE):
         case.title = m.group(1).strip()
 
-    # Sections — extract between ## headings
+    # Sections — extract between ## headings (stop at next ## or --- separator)
     def section(header: str) -> str:
-        pattern = rf"## {header}\s*\n(.*?)(?=\n## |\Z)"
+        pattern = rf"## {header}\s*\n(.*?)(?=\n## |\n---)"
         if m := re.search(pattern, text, re.DOTALL):
             return m.group(1).strip()
         return ""
