@@ -101,6 +101,10 @@ debug-mind search "redis connection timeout"
 debug-mind list
 debug-mind stats
 
+# View or delete a specific case
+debug-mind show <case_id>
+debug-mind delete <case_id>
+
 # Start MCP server (for Claude Code / Desktop integration)
 debug-mind serve
 ```
@@ -126,6 +130,7 @@ This gives Claude (or any MCP client) these tools:
 - `save_bug_case` — save new diagnosis to memory
 - `list_recent_bugs` — browse recent cases
 - `get_bug_stats` — see memory statistics
+- `delete_bug_case` — remove a case from memory
 
 ## Memory Format
 
@@ -200,9 +205,14 @@ debug-mind/
 │   └── tools/
 │       └── mcp_server.py   # MCP server for external clients
 ├── memory/
-│   └── cases/              # persisted bug cases (Markdown)
+│   └── examples/           # example bug cases (Markdown)
 ├── tests/
-│   └── test_memory_store.py
+│   ├── test_memory_store.py  # Memory store + codebase skill tests
+│   ├── test_agent.py         # Agent tool dispatch tests
+│   ├── test_cli.py           # CLI command tests
+│   └── test_schemas.py       # Schema validation tests
+├── docs/
+│   └── logo.svg              # Project logo
 └── pyproject.toml
 ```
 

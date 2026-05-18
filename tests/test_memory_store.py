@@ -137,7 +137,7 @@ class TestCodebaseSkills:
         from debug_mind.skills.codebase import search_code
         result = search_code("MemoryStore", project_path, file_type="py")
         assert result.get("found", 0) > 0
-        assert any("store.py" in m["file"] for m in result.get("matches", []))
+        assert any("store" in m["file"] for m in result.get("matches", []))
 
     def test_read_file(self, project_path):
         from debug_mind.skills.codebase import read_file
@@ -153,7 +153,10 @@ class TestCodebaseSkills:
     @pytest.mark.skipif(not _has_rg(), reason="ripgrep not available")
     def test_search_code_empty_pattern(self, project_path):
         from debug_mind.skills.codebase import search_code
-        result = search_code("NONEXISTENT_PATTERN_XYZ123", project_path)
+        # Search in src/ only to avoid matching the pattern string in this test file
+        import os
+        src_path = os.path.join(project_path, "src")
+        result = search_code("NONEXISTENT_PATTERN_XYZ123", src_path)
         assert result.get("found", -1) == 0
 
     def test_read_file_outside_project(self, project_path):

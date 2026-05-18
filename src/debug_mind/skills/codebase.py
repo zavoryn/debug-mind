@@ -42,11 +42,15 @@ def search_code(pattern: str, project_path: str, file_type: str = "", max_result
     lines = output.split("\n")[:max_results]
     matches = []
     for line in lines:
-        # ripgrep format: file:line:content  or  file:line:col:content
-        parts = line.split(":", 2)
+        # ripgrep format: file:line:content (or file:line:col:content)
+        # On Windows, path may start with drive letter (C:\...), so skip the
+        # first colon if the line starts with a drive-letter pattern.
+        colon_offset = 2 if len(line) > 2 and line[1] == ":" else 0
+        rest = line[colon_offset:]
+        parts = rest.split(":", 2)
         if len(parts) >= 3:
             matches.append({
-                "file": parts[0],
+                "file": line[:colon_offset] + parts[0],
                 "line_number": parts[1],
                 "content": parts[2].strip()[:200],
             })

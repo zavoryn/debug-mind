@@ -308,6 +308,52 @@ def rebuild():
 
 
 @main.command()
+@click.argument("case_id")
+def show(case_id: str):
+    """Show detailed information about a specific bug case."""
+    memory = _get_memory()
+    case = memory.get(case_id)
+
+    if not case:
+        console.print(f"[red]Case '{case_id}' not found in memory.[/red]")
+        sys.exit(1)
+
+    env_lines = "\n".join(f"  {k}: {v}" for k, v in case.environment.items())
+    steps_lines = "\n".join(f"  {i+1}. {s}" for i, s in enumerate(case.diagnosis_steps))
+    tags_str = ", ".join(case.tags) if case.tags else "none"
+
+    console.print(Panel(
+        f"[bold]Title:[/bold] {case.title}\n\n"
+        f"[bold]Severity:[/bold] {case.severity.value}  |  [bold]Status:[/bold] {case.status.value}\n\n"
+        f"[bold]Environment:[/bold]\n{env_lines or '  (not specified)'}\n\n"
+        f"[bold]Symptoms:[/bold]\n  {case.symptoms}\n\n"
+        f"[bold]Error Log:[/bold]\n  {case.error_log or '(none)'}\n\n"
+        f"[bold]Root Cause:[/bold]\n  {case.root_cause or '(not yet diagnosed)'}\n\n"
+        f"[bold]Fix Suggestion:[/bold]\n  {case.fix_suggestion or '(pending)'}\n\n"
+        f"[bold]Diagnosis Steps:[/bold]\n{steps_lines or '  (none)'}\n\n"
+        f"[bold]Tags:[/bold] {tags_str}\n\n"
+        f"[dim]Created: {case.created_at.strftime('%Y-%m-%d %H:%M')}  "
+        f"Updated: {case.updated_at.strftime('%Y-%m-%d %H:%M')}[/dim]",
+        title=f"Case: {case.id}",
+        border_style="blue",
+    ))
+
+
+@main.command()
+@click.argument("case_id")
+@click.confirmation_option(prompt="Are you sure you want to delete this case?")
+def delete(case_id: str):
+    """Delete a bug case from memory."""
+    memory = _get_memory()
+    deleted = memory.delete(case_id)
+    if deleted:
+        console.print(f"[green]Case '{case_id}' deleted.[/green]")
+    else:
+        console.print(f"[red]Case '{case_id}' not found.[/red]")
+        sys.exit(1)
+
+
+@main.command()
 def serve():
     """Start the MCP server for external clients."""
     console.print("[bold blue]Starting DebugMind MCP Server...[/bold blue]")
