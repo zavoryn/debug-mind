@@ -9,24 +9,16 @@ from debug_mind.schemas import BugCase, Severity, BugStatus
 from debug_mind.memory.store import MemoryStore, _case_to_markdown, _markdown_to_case
 
 
-def _has_grep_static() -> bool:
-    """Module-level check for grep availability (used by pytest.mark.skipif)."""
+def _has_rg() -> bool:
+    """Check if ripgrep is available and functional."""
     import subprocess
     import os
     try:
-        subprocess.run(
-            ["where" if os.name == "nt" else "which", "rg"],
-            capture_output=True, timeout=5,
+        result = subprocess.run(
+            ["rg", "--version"],
+            capture_output=True, text=True, timeout=5,
         )
-        return True
-    except Exception:
-        pass
-    try:
-        subprocess.run(
-            ["where" if os.name == "nt" else "which", "grep"],
-            capture_output=True, timeout=5,
-        )
-        return True
+        return result.returncode == 0
     except Exception:
         return False
 
@@ -134,10 +126,6 @@ class TestCodebaseSkills:
     def project_path(self):
         return str(Path(__file__).parent.parent)
 
-    def _has_grep(self):
-        from debug_mind.skills.codebase import _has_cmd
-        return _has_cmd("rg") or _has_cmd("grep")
-
     def test_list_project_structure(self, project_path):
         from debug_mind.skills.codebase import list_project_structure
         result = list_project_structure(project_path, depth=2)
@@ -145,10 +133,7 @@ class TestCodebaseSkills:
         assert "pyproject.toml" in result["structure"]
         assert "src/" in result["structure"]
 
-    @pytest.mark.skipif(
-        not _has_grep_static(),
-        reason="No grep/ripgrep available",
-    )
+    @pytest.mark.skipif(not _has_rg(), reason="ripgrep not available")
     def test_search_code_finds_something(self, project_path):
         from debug_mind.skills.codebase import search_code
         result = search_code("MemoryStore", project_path, file_type="py")
@@ -166,10 +151,7 @@ class TestCodebaseSkills:
         assert result["total_lines"] > 5
         assert "showing" in result
 
-    @pytest.mark.skipif(
-        not _has_grep_static(),
-        reason="No grep/ripgrep available",
-    )
+    @pytest.mark.skipif(not _has_rg(), reason="ripgrep not available")
     def test_search_code_empty_pattern(self, project_path):
         from debug_mind.skills.codebase import search_code
         result = search_code("NONEXISTENT_PATTERN_XYZ123", project_path)
