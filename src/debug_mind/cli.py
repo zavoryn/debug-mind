@@ -592,5 +592,37 @@ def eval(search_only: bool, case_id: str, json_path: str):
         console.print(f"\n[dim]Results written to {json_path}[/dim]")
 
 
+@main.command()
+@click.option("--fix", is_flag=True, help="Fix missing vectors by re-indexing")
+@click.option("--delete-orphans", is_flag=True, help="Delete orphan vectors (requires --fix)")
+def doctor(fix: bool, delete_orphans: bool):
+    """Diagnose and fix inconsistencies between markdown and vector store."""
+    memory = _get_memory()
+    result = memory.doctor(fix=fix, delete_orphans=delete_orphans and fix)
+
+    table = Table(title="Memory Health Check")
+    table.add_column("Issue", width=25)
+    table.add_column("Count", width=8)
+
+    issues = [
+        ("Missing vectors", result["missing_vectors"]),
+        ("Orphan vectors", result["orphan_vectors"]),
+        ("Pending rejections", result["pending_rejected"]),
+    ]
+    for label, count in issues:
+        color = "green" if count == 0 else "yellow" if count < 5 else "red"
+        table.add_row(label, f"[{color}]{count}[/{color}]")
+
+    if fix:
+        table.add_row("Fixed missing", f"[green]{result['fixed_missing']}[/green]")
+        table.add_row("Fixed pending", f"[green]{result['fixed_pending']}[/green]")
+    if delete_orphans and fix:
+        table.add_row("Deleted orphans", f"[yellow]{result['deleted_orphans']}[/yellow]")
+
+    console.print(table)
+    if not fix and (result["missing_vectors"] or result["orphan_vectors"] or result["pending_rejected"]):
+        console.print("[dim]Run with --fix to repair, add --delete-orphans to remove orphan vectors.[/dim]")
+
+
 if __name__ == "__main__":
     main()

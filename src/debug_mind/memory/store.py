@@ -62,6 +62,8 @@ class MemoryStore:
 
         self.collection = self.client.get_or_create_collection(**collection_kwargs)
 
+        self._cleanup_stale_tmps()
+
     # ── Write ──────────────────────────────────────────────────────
 
     def save(self, case: BugCase) -> BugCase:
@@ -334,12 +336,15 @@ class MemoryStore:
                     except Exception:
                         pass
                 else:
+                    # Transactional reject: .pending → vector delete → .rejected
+                    pending_path = self.cases_dir / f"{case_id}.md.rejected.pending"
                     rejected_path = self.cases_dir / f"{case_id}.md.rejected"
-                    md_path.rename(rejected_path)
+                    md_path.rename(pending_path)
                     try:
                         self.collection.delete(ids=[case_id])
                     except Exception:
                         pass
+                    pending_path.rename(rejected_path)
         except FileLockTimeout:
             raise MemoryBusyError("Memory is busy — another process is writing. Retry in a moment.")
         _log.info("case verified", extra={"op": "verify", "case_id": case_id, "saved": correct})
@@ -360,8 +365,93 @@ class MemoryStore:
             raise MemoryBusyError("Memory is busy — another process is writing. Retry in a moment.")
         return len(md_files)
 
+    # ── Reconciliation ────────────────────────────────────────────
 
-# ── Markdown ↔ BugCase serialization ───────────────────────────────
+    def _cleanup_stale_tmps(self) -> int:
+        """Remove .tmp files older than 10 minutes. Returns count removed."""
+        import time
+        now = time.time()
+        removed = 0
+        for tmp in self.cases_dir.glob("*.tmp"):
+            try:
+                age = now - tmp.stat().st_mtime
+                if age > 600:
+                    tmp.unlink()
+                    removed += 1
+            except OSError:
+                pass
+        # Also clean up .pending files older than 10 min
+        for pending in self.cases_dir.glob("*.pending"):
+            try:
+                age = now - pending.stat().st_mtime
+                if age > 600:
+                    pending.unlink()
+                    removed += 1
+            except OSError:
+                pass
+        return removed
+
+    def doctor(self, fix: bool = False, delete_orphans: bool = False) -> dict:
+        """Diagnose and optionally fix inconsistencies between markdown and vector store.
+
+        Returns dict with counts of issues found and fixed.
+        """
+        md_ids = {p.stem for p in self.cases_dir.glob("*.md")}
+
+        # Get all vector IDs
+        all_ids = set()
+        count = self.collection.count()
+        if count > 0:
+            results = self.collection.get(include=[], limit=count)
+            all_ids = set(results["ids"])
+
+        missing_vectors = md_ids - all_ids
+        orphan_vectors = all_ids - md_ids
+
+        # Check for .pending files (incomplete verify(correct=False))
+        pending_fixes = []
+        for pending in self.cases_dir.glob("*.rejected.pending"):
+            case_id = pending.stem.replace(".md", "").replace(".rejected", "")
+            rejected_path = self.cases_dir / f"{case_id}.md.rejected"
+            pending_fixes.append({
+                "case_id": case_id,
+                "pending_path": str(pending),
+                "target_path": str(rejected_path),
+            })
+            if fix:
+                pending.rename(rejected_path)
+
+        fixed_missing = 0
+        if fix and missing_vectors:
+            for case_id in missing_vectors:
+                md_path = self.cases_dir / f"{case_id}.md"
+                case = _markdown_to_case(md_path)
+                if case:
+                    try:
+                        self._save_to_vector(case)
+                        fixed_missing += 1
+                    except Exception:
+                        pass
+
+        deleted_orphans = 0
+        if fix and delete_orphans and orphan_vectors:
+            for case_id in orphan_vectors:
+                try:
+                    self.collection.delete(ids=[case_id])
+                    deleted_orphans += 1
+                except Exception:
+                    pass
+
+        result = {
+            "missing_vectors": len(missing_vectors),
+            "orphan_vectors": len(orphan_vectors),
+            "pending_rejected": len(pending_fixes),
+            "fixed_missing": fixed_missing,
+            "deleted_orphans": deleted_orphans,
+            "fixed_pending": len(pending_fixes) if fix else 0,
+        }
+        _log.info("doctor check", extra={"op": "doctor", **result})
+        return result
 
 def _case_to_markdown(case: BugCase) -> str:
     """Serialize a BugCase to a human-readable Markdown file."""
