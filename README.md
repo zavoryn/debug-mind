@@ -1,3 +1,5 @@
+[English](README.md) | **中文**
+
 <p align="center">
   <img src="docs/logo.svg" alt="DebugMind" width="120" height="120" />
   <h1 align="center">DebugMind</h1>
