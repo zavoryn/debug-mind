@@ -353,6 +353,18 @@ Phase 2 解决这七件事 + 一个补 hit_count 进 ranking 的实验性增强�
 [2026-05-19] [TASK P2-5] MCP 鉴权+审计完成：DEBUG_MIND_MCP_TOKEN env 变量，写工具（save/delete/verify）要求 auth_token 参数匹配，读工具不需要。未设 token 时 WARNING 但保持开放。audit.jsonl 记录所有写操作（CLI + MCP），debug-mind audit CLI 子命令带 --since/--op 过滤。新增 tests/test_mcp_auth.py（10测试）。pytest 158 passed。取舍：auth_token 不能以下划线开头（FastMCP 限制），不实现 RBAC。
 [2026-05-19] [TASK P2-6] 输入消毒完成：sanitize.py 模块，description 4KB 截断，error_log 16KB（头8+尾8），env 20 key/256 char，tags 最多 20，控制字符剥离（保留 \n\t\r）。阈值从 env 可调（DEBUG_MIND_MAX_*）。Agent _run_loop 入口 + MCP save 入口各做一遍。新增 tests/test_sanitize.py（15测试）。pytest 172 passed。
 [2026-05-19] [TASK P2-7] 一致性 reconciliation 完成：__init__ 清理 >10min 的 .tmp/.pending。verify(correct=False) 改为 .pending→vector delete→.rejected 事务化。doctor() 方法检测 missing/orphan/pending。debug-mind doctor CLI（--fix/--delete-orphans）。新增 tests/test_reconciliation.py（9测试）。pytest 182 passed, 0 failed。
+[2026-05-19] [TASK P2-8] hit_count ranking 完成：search 排序加入 math.log1p(hit_count) * 0.05 加权。系数从 DEBUG_MIND_HIT_COUNT_WEIGHT 可调，=0 时退化为 Phase 1。新增 tests/test_hit_count_ranking.py（4测试）。最终 pytest 186 passed, 0 failed（排除 2 个 pre-existing worktree 路径问题）。
+
+## Phase 2 完成总结
+
+- **P2-1 到 P2-8 全部完成**，共 186 测试全绿
+- 新增依赖：filelock, tenacity（可选：opentelemetry-api）
+- 新增模块：budget.py, sanitize.py, observability/logger.py
+- 新增 CLI 命令：doctor, audit, --max-cost, --max-tokens, --no-retry
+- 默认行为零变化：不设新环境变量时 CLI/API 行为同 Phase 1
+- 未碰 Phase 1 schema 字段语义（仅新增字段）
+- 未碰 README 既有章节
+- 所有 commit 在 worktree-phase-2 分支，未合并到 master
 ```
 
 ---

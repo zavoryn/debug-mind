@@ -12,6 +12,7 @@ Design decisions:
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 from pathlib import Path
@@ -29,6 +30,7 @@ _log = get_logger("memory")
 COLLECTION_NAME = "bug_cases"
 DEFAULT_MEMORY_DIR = Path(os.environ.get("DEBUG_MIND_MEMORY_DIR", "memory"))
 DEDUP_THRESHOLD = float(os.environ.get("DEBUG_MIND_DEDUP_THRESHOLD", "0.92"))
+HIT_COUNT_WEIGHT = float(os.environ.get("DEBUG_MIND_HIT_COUNT_WEIGHT", "0.05"))
 
 
 class MemoryBusyError(Exception):
@@ -211,10 +213,14 @@ class MemoryStore:
                     continue
                 search_results.append((case, round(score, 4)))
 
-        # Rerank: verified cases get full score, unverified get 0.7 multiplier
+        # Rerank: verified boost + hit_count log-weighted boost
+        hc_weight = HIT_COUNT_WEIGHT
+
         def effective_score(item: tuple[BugCase, float]) -> float:
             case, score = item
-            return score * (1.0 if case.verified else 0.7)
+            verified_mult = 1.0 if case.verified else 0.7
+            hc_mult = 1.0 + math.log1p(case.hit_count) * hc_weight if hc_weight > 0 else 1.0
+            return score * verified_mult * hc_mult
 
         search_results.sort(key=effective_score, reverse=True)
         result_list = [SearchResult(case=case, score=score) for case, score in search_results]
