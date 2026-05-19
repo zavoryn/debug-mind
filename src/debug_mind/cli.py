@@ -64,7 +64,8 @@ def main():
 @click.option("--no-stream", is_flag=True, help="Disable streaming output (show spinner instead)")
 @click.option("--max-cost", default=None, type=float, help="Max cost in USD (default 0.50)")
 @click.option("--max-tokens", default=None, type=int, help="Max cumulative tokens (default 50000)")
-def diagnose(description: str, log: str, env: str, project: str, severity: str, no_stream: bool, max_cost: float | None, max_tokens: int | None):
+@click.option("--no-retry", is_flag=True, help="Disable API retry on transient errors")
+def diagnose(description: str, log: str, env: str, project: str, severity: str, no_stream: bool, max_cost: float | None, max_tokens: int | None, no_retry: bool):
     """Diagnose a bug using AI + memory + optional codebase search."""
     # Parse environment
     environment = {}
@@ -132,7 +133,7 @@ def diagnose(description: str, log: str, env: str, project: str, severity: str, 
         max_cost_usd=cost_limit,
     )
 
-    agent = DiagnosticAgent(memory=memory, project_path=project_path, api_key=api_key, budget=budget)
+    agent = DiagnosticAgent(memory=memory, project_path=project_path, api_key=api_key, budget=budget, no_retry=no_retry)
 
     if no_stream:
         try:

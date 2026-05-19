@@ -26,7 +26,27 @@ from debug_mind.tools.schemas import MEMORY_TOOLS as _MEMORY_TOOLS, CODEBASE_TOO
 from debug_mind.budget import TokenBudget
 from debug_mind.observability.logger import get_logger, _try_otel_span
 
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
+
 _log = get_logger("agent")
+
+# Retryable API errors: rate limits (429), server errors (5xx), connection issues
+_RETRYABLE = (
+    anthropic.RateLimitError,
+    anthropic.APIStatusError,  # we'll check status_code in predicate
+    anthropic.APIConnectionError,
+)
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    """Return True for 429, 5xx, and connection errors. Not for 400/401/403."""
+    if isinstance(exc, anthropic.RateLimitError):
+        return True
+    if isinstance(exc, anthropic.APIConnectionError):
+        return True
+    if isinstance(exc, anthropic.APIStatusError):
+        return exc.status_code >= 500
+    return False
 
 SYSTEM_PROMPT = """You are DebugMind, an expert bug diagnosis agent with access to:
 1. **Experiential Memory** — a knowledge base of past bug diagnoses.
@@ -67,13 +87,25 @@ class DiagnosticAgent:
         model: str = "claude-sonnet-4-20250514",
         api_key: str | None = None,
         budget: TokenBudget | None = None,
+        no_retry: bool = False,
     ):
         self.memory = memory
         self.project_path = project_path
         self.model = model
         self.budget = budget
+        self.no_retry = no_retry
         self.client = anthropic.Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
         self.tools = MEMORY_TOOLS + (CODEBASE_TOOLS if project_path else [])
+
+    @retry(
+        retry=retry_if_exception(_is_retryable),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=2, min=2, max=30),
+        reraise=True,
+    )
+    def _call_anthropic(self, **kwargs):
+        """Call Anthropic API with retry on transient errors (429, 5xx, connection)."""
+        return self.client.messages.create(**kwargs)
 
     def diagnose(
         self,
@@ -151,7 +183,8 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
                     else:
                         cached_tools.append(tool)
 
-                response = self.client.messages.create(
+                call_fn = self._call_anthropic if not self.no_retry else self.client.messages.create
+                response = call_fn(
                     model=self.model,
                     max_tokens=4096,
                     system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": cache_control}],
@@ -159,9 +192,16 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
                     messages=messages,
                 )
             except anthropic.APIError as e:
+                _log.warning("API error after retries", extra={"trace_id": trace_id, "error": str(e)})
                 if stream:
                     yield ("thinking", f"\n[API Error: {e.message}]")
-                break
+                # Save partial diagnosis with what we have
+                partial = self._build_partial_result(
+                    diagnosis_steps, saved_case_id, similar_case_ids,
+                    assistant_content=None, budget_reason=f"API error: {e.message}",
+                )
+                yield ("done", partial)
+                return
 
             # Budget tracking
             if self.budget and response.usage:
