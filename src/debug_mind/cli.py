@@ -62,7 +62,9 @@ def main():
 @click.option("--project", "-p", default="", help="Project root path for codebase access")
 @click.option("--severity", "-s", default="medium", type=click.Choice(["critical", "high", "medium", "low"]))
 @click.option("--no-stream", is_flag=True, help="Disable streaming output (show spinner instead)")
-def diagnose(description: str, log: str, env: str, project: str, severity: str, no_stream: bool):
+@click.option("--max-cost", default=None, type=float, help="Max cost in USD (default 0.50)")
+@click.option("--max-tokens", default=None, type=int, help="Max cumulative tokens (default 50000)")
+def diagnose(description: str, log: str, env: str, project: str, severity: str, no_stream: bool, max_cost: float | None, max_tokens: int | None):
     """Diagnose a bug using AI + memory + optional codebase search."""
     # Parse environment
     environment = {}
@@ -119,8 +121,18 @@ def diagnose(description: str, log: str, env: str, project: str, severity: str, 
         sys.exit(1)
 
     from debug_mind.agent import DiagnosticAgent
+    from debug_mind.budget import TokenBudget
 
-    agent = DiagnosticAgent(memory=memory, project_path=project_path, api_key=api_key)
+    # Build budget from CLI args / env vars
+    cost_limit = max_cost if max_cost is not None else float(os.environ.get("DEBUG_MIND_MAX_COST", "0.50"))
+    token_limit = max_tokens if max_tokens is not None else int(os.environ.get("DEBUG_MIND_MAX_TOKENS", "50000"))
+    budget = TokenBudget(
+        max_input_tokens=token_limit,
+        max_output_tokens=max(token_limit // 4, 1),
+        max_cost_usd=cost_limit,
+    )
+
+    agent = DiagnosticAgent(memory=memory, project_path=project_path, api_key=api_key, budget=budget)
 
     if no_stream:
         try:

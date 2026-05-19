@@ -347,6 +347,7 @@ Phase 2 解决这七件事 + 一个补 hit_count 进 ranking 的实验性增强�
 ```
 [2026-05-19] [BASELINE] pytest 通过 126 / 失败 1(pre-existing: worktree路径导致rg失败) / 新增0；无 eval 命令（工作单数据与实际不符，以 126 为基线）
 [2026-05-19] [TASK P2-1] 并发安全完成：filelock>=3.12，30s timeout，save/delete/verify/mark_used/rebuild_index 均包锁，读不加锁。MemoryBusyError CLI 友好提示。新增 tests/test_concurrency.py（5测试：10进程并发save、锁超时、delete锁、读无锁）。pytest 131 passed / 1 pre-existing fail。取舍：merge master 后 _find_dedup_target+锁共存，dedup 在锁内执行（更安全，略增锁持有时间）。
+[2026-05-19] [TASK P2-2] Token/成本预算完成：budget.py 模块（TokenBudget），价格表从 env 可覆盖，agent 每轮 check is_exceeded()，budget exceeded 保存 UNRESOLVED 部分诊断。CLI --max-cost/--max-tokens + env 变量。新增 tests/test_budget.py（11测试）。pytest 136 passed。取舍：budget.py 放在 src/debug_mind/ 而非 src/debug_mind/agent/（后者是文件不是包），不改目录结构。
 ```
 
 ---

@@ -21,6 +21,7 @@ from debug_mind.schemas import BugCase, DiagnosisResult, Severity, BugStatus
 from debug_mind.memory.store import MemoryStore
 from debug_mind.skills.codebase import search_code, read_file, list_project_structure
 from debug_mind.tools.schemas import MEMORY_TOOLS as _MEMORY_TOOLS, CODEBASE_TOOLS as _CODEBASE_TOOLS
+from debug_mind.budget import TokenBudget
 
 SYSTEM_PROMPT = """You are DebugMind, an expert bug diagnosis agent with access to:
 1. **Experiential Memory** — a knowledge base of past bug diagnoses.
@@ -60,10 +61,12 @@ class DiagnosticAgent:
         project_path: str | None = None,
         model: str = "claude-sonnet-4-20250514",
         api_key: str | None = None,
+        budget: TokenBudget | None = None,
     ):
         self.memory = memory
         self.project_path = project_path
         self.model = model
+        self.budget = budget
         self.client = anthropic.Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
         self.tools = MEMORY_TOOLS + (CODEBASE_TOOLS if project_path else [])
 
@@ -151,6 +154,21 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
                     yield ("thinking", f"\n[API Error: {e.message}]")
                 break
 
+            # Budget tracking
+            if self.budget and response.usage:
+                self.budget.record(response.usage)
+                exceeded, reason = self.budget.is_exceeded()
+                if exceeded:
+                    if stream:
+                        yield ("thinking", f"\n[Budget exceeded: {reason}]")
+                    # Save partial diagnosis before breaking
+                    partial = self._build_partial_result(
+                        diagnosis_steps, saved_case_id, similar_case_ids,
+                        assistant_content=None, budget_reason=reason,
+                    )
+                    yield ("done", partial)
+                    return
+
             assistant_content = response.content
             messages.append({"role": "assistant", "content": assistant_content})
 
@@ -216,6 +234,50 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
         )
 
         yield ("done", diag)
+
+    def _build_partial_result(
+        self,
+        diagnosis_steps: list[str],
+        saved_case_id: str | None,
+        similar_case_ids: list[str],
+        assistant_content: list | None,
+        budget_reason: str,
+    ) -> DiagnosisResult:
+        """Build a partial DiagnosisResult when budget is exceeded.
+
+        Saves what we have as UNRESOLVED so the user's money wasn't wasted.
+        """
+        final_text = ""
+        if assistant_content:
+            final_text = "\n".join(
+                b.text for b in assistant_content if hasattr(b, "text") and b.type == "text"
+            )
+
+        saved_case = self.memory.get(saved_case_id) if saved_case_id else None
+        reasoning = f"[Budget exceeded: {budget_reason}]\n{final_text}" if final_text else f"[Budget exceeded: {budget_reason}]"
+
+        if not saved_case and diagnosis_steps:
+            case = BugCase(
+                title="Partial diagnosis (budget exceeded)",
+                symptoms="Diagnosis interrupted by budget limit",
+                root_cause=final_text or "Incomplete — budget exceeded before root cause identified",
+                fix_suggestion="",
+                status=BugStatus.UNRESOLVED,
+                diagnosis_steps=diagnosis_steps,
+                similar_case_ids=similar_case_ids,
+            )
+            self.memory.save(case)
+            saved_case = case
+
+        return DiagnosisResult(
+            case_id=saved_case.id if saved_case else "unknown",
+            root_cause=saved_case.root_cause if saved_case else final_text,
+            confidence=0.0,
+            diagnosis_steps=diagnosis_steps,
+            fix_suggestion=saved_case.fix_suggestion if saved_case else "",
+            similar_cases_found=len(similar_case_ids),
+            reasoning=reasoning,
+        )
 
     def _execute_tool(self, name: str, params: dict) -> tuple[dict, str | None]:
         """Execute a single tool call. Returns (result, side_effect_tag)."""
