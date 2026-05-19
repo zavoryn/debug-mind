@@ -36,6 +36,23 @@ from rich.text import Text
 from debug_mind.memory.store import MemoryStore, MemoryBusyError
 from debug_mind.schemas import DiagnosisResult
 
+
+def _cli_audit(memory: MemoryStore, op: str, case_id: str, **details) -> None:
+    """Write audit log entry from CLI."""
+    audit_path = memory.memory_dir / "audit.jsonl"
+    audit_path.parent.mkdir(parents=True, exist_ok=True)
+    import json as _json
+    from datetime import datetime as _dt, timezone as _tz
+    entry = {
+        "ts": _dt.now(_tz.utc).isoformat(),
+        "actor": "cli",
+        "op": op,
+        "case_id": case_id,
+        "details": details,
+    }
+    with open(audit_path, "a", encoding="utf-8") as f:
+        f.write(_json.dumps(entry, ensure_ascii=False) + "\n")
+
 # Load .env before anything else
 load_dotenv()
 
@@ -376,6 +393,7 @@ def delete(case_id: str):
         console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
     if deleted:
+        _cli_audit(memory, "delete", case_id)
         console.print(f"[green]Case '{case_id}' deleted.[/green]")
     else:
         console.print(f"[red]Case '{case_id}' not found.[/red]")
@@ -398,6 +416,7 @@ def verify(case_id: str, action: str | None, notes: str):
         if action == "correct":
             ok = memory.verify(case_id, correct=True, notes=notes)
             if ok:
+                _cli_audit(memory, "verify", case_id, correct=True)
                 console.print(f"[green]Case '{case_id}' marked as verified.[/green]")
             else:
                 console.print(f"[red]Case '{case_id}' not found.[/red]")
@@ -405,6 +424,7 @@ def verify(case_id: str, action: str | None, notes: str):
         elif action == "wrong":
             ok = memory.verify(case_id, correct=False, notes=notes)
             if ok:
+                _cli_audit(memory, "verify", case_id, correct=False)
                 console.print(f"[yellow]Case '{case_id}' rejected and removed from index.[/yellow]")
             else:
                 console.print(f"[red]Case '{case_id}' not found.[/red]")
@@ -450,6 +470,71 @@ def serve():
     console.print("[bold blue]Starting DebugMind MCP Server...[/bold blue]")
     from debug_mind.tools.mcp_server import mcp
     mcp.run()
+
+
+@main.command()
+@click.option("--since", default="24h", help="Time range: 1h, 24h, 7d (default 24h)")
+@click.option("--op", default=None, help="Filter by operation: save, verify, delete, mark_used")
+def audit(since: str, op: str | None):
+    """Show audit log of write operations."""
+    import json as _json
+    from datetime import datetime as _dt, timedelta, timezone as _tz
+
+    memory = _get_memory()
+    audit_path = memory.memory_dir / "audit.jsonl"
+
+    if not audit_path.exists():
+        console.print("[yellow]No audit log found.[/yellow]")
+        return
+
+    # Parse --since
+    since_map = {"1h": timedelta(hours=1), "24h": timedelta(hours=24), "7d": timedelta(days=7)}
+    delta = since_map.get(since, timedelta(hours=24))
+    cutoff = _dt.now() - delta
+
+    entries = []
+    with open(audit_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = _json.loads(line)
+            except _json.JSONDecodeError:
+                continue
+            if op and entry.get("op") != op:
+                continue
+            ts_str = entry.get("ts", "")
+            try:
+                ts = _dt.fromisoformat(ts_str).replace(tzinfo=None)
+                if ts < cutoff:
+                    continue
+            except (ValueError, TypeError):
+                pass
+            entries.append(entry)
+
+    if not entries:
+        console.print("[yellow]No matching audit entries.[/yellow]")
+        return
+
+    table = Table(title=f"Audit Log (last {since})")
+    table.add_column("Time", width=19)
+    table.add_column("Actor", width=6)
+    table.add_column("Op", width=10)
+    table.add_column("Case ID", width=14)
+    table.add_column("Details", width=30)
+
+    for e in reversed(entries[-50:]):
+        details = ", ".join(f"{k}={v}" for k, v in e.get("details", {}).items())
+        table.add_row(
+            e.get("ts", "")[:19],
+            e.get("actor", "?"),
+            e.get("op", "?"),
+            e.get("case_id", "?"),
+            details[:30],
+        )
+
+    console.print(table)
 
 
 @main.command()

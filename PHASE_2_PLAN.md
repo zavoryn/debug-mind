@@ -350,6 +350,7 @@ Phase 2 解决这七件事 + 一个补 hit_count 进 ranking 的实验性增强�
 [2026-05-19] [TASK P2-2] Token/成本预算完成：budget.py 模块（TokenBudget），价格表从 env 可覆盖，agent 每轮 check is_exceeded()，budget exceeded 保存 UNRESOLVED 部分诊断。CLI --max-cost/--max-tokens + env 变量。新增 tests/test_budget.py（11测试）。pytest 136 passed。取舍：budget.py 放在 src/debug_mind/ 而非 src/debug_mind/agent/（后者是文件不是包），不改目录结构。
 [2026-05-19] [TASK P2-3] 结构化日志完成：observability/logger.py（JSONFormatter + get_logger），DEBUG_MIND_LOG_FORMAT=json|text，DEBUG_MIND_LOG_FILE=path。trace_id 每诊断生成。MemoryStore save/delete/mark_used/verify 各一条 INFO log。Agent tool call 带 latency_ms、tokens_in/out。OTel hook（_try_otel_span）可选，opentelemetry-api 在 [observability] optional deps。CLI 不设 env 时输出不变。新增 tests/test_structured_logging.py（7测试）。pytest 144 passed。
 [2026-05-19] [TASK P2-4] API 重试+兜底完成：tenacity>=8.2，_call_anthropic 用 retry_if_exception(_is_retryable)，只重试 429/5xx/connection，不重试 400/401/403。3 次重试 + 指数退避。API 最终失败时保存 UNRESOLVED 部分诊断。CLI --no-retry flag。新增 tests/test_retry.py（5测试）。pytest 148 passed。
+[2026-05-19] [TASK P2-5] MCP 鉴权+审计完成：DEBUG_MIND_MCP_TOKEN env 变量，写工具（save/delete/verify）要求 auth_token 参数匹配，读工具不需要。未设 token 时 WARNING 但保持开放。audit.jsonl 记录所有写操作（CLI + MCP），debug-mind audit CLI 子命令带 --since/--op 过滤。新增 tests/test_mcp_auth.py（10测试）。pytest 158 passed。取舍：auth_token 不能以下划线开头（FastMCP 限制），不实现 RBAC。
 ```
 
 ---
