@@ -1,0 +1,30 @@
+id: config-missing
+bug_description: "Spring Boot application fails to start because required config property is missing"
+error_log: |
+  org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'dataSource' defined in class path resource [org/springframework/boot/autoconfigure/jdbc/DataSourceConfiguration$Hikari.class]: Unsatisfied dependency expressed through method 'dataSource' parameter 0; nested exception is org.springframework.boot.context.properties.ConfigurationPropertiesBindException: Error creating bean with name 'spring.datasource-org.springframework.boot.autoconfigure.jdbc.DataSourceProperties': Could not bind properties to 'DataSourceProperties'
+      at org.springframework.boot.context.properties.ConfigurationPropertiesBindException.create(ConfigurationPropertiesBindException.java:70)
+      at org.springframework.boot.context.properties.Binder.bind(Binder.java:453)
+  Binding failure for property 'spring.datasource.url' with value 'null'
+  Reason: The elements [spring.datasource.url] were left unbound. Verify that the required property is correctly set in application.yml, environment variables, or config server.
+  Active profiles: production
+  Config files loaded: classpath:/application.yml, classpath:/application-production.yml
+environment:
+  language: Java
+  framework: Spring Boot 3.2
+  runtime: JDK 17
+  dependencies: Spring Boot Autoconfigure 3.2
+seed_case_ids:
+  - seed-config-missing
+expected_root_cause_keywords:
+  - config
+  - missing property
+  - binding
+  - unbound
+  - profile
+expected_fix_keywords:
+  - application.yml
+  - environment variable
+  - default value
+  - optional
+  - config server
+expected_top_hit_id: seed-config-missing

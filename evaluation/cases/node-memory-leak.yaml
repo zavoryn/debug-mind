@@ -1,0 +1,32 @@
+id: node-memory-leak
+bug_description: "Node.js EventEmitter memory leak warning due to unbounded listener accumulation"
+error_log: |
+  (node:18742) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 connection listeners added to [EventEmitter]. Use emitter.setMaxListeners() to increase limit
+      at _addListener (node:events:583:17)
+      at SocketPool.addConnection (file:///app/lib/socket-pool.js:89:24)
+      at SocketPool.reconnect (file:///app/lib/socket-pool.js:45:18)
+      at Timer.processTicks (node:internal/timers:95:5)
+  FATAL ERROR: CALL_AND_RETRY_LAST Allocation failed - JavaScript heap out of memory
+      at new ArrayBuffer (<anonymous>)
+      at new Uint8Array (<anonymous>)
+      at Object.create (node:v8:347:28)
+      at Socket.<anonymous> (file:///app/lib/socket-pool.js:102:15)
+environment:
+  language: Node.js
+  framework: Express 4.18
+  runtime: Node.js 20.11
+  dependencies: socket.io 4.7
+seed_case_ids:
+  - seed-node-memleak
+expected_root_cause_keywords:
+  - memory leak
+  - eventemitter
+  - maxlisteners
+  - heap
+  - listener
+expected_fix_keywords:
+  - setmaxlisteners
+  - removeListener
+  - removeAllListeners
+  - cleanup
+expected_top_hit_id: seed-node-memleak

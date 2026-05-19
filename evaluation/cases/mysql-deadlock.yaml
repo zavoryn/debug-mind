@@ -1,0 +1,34 @@
+id: mysql-deadlock
+bug_description: "MySQL deadlock detected during concurrent batch update on inventory table"
+error_log: |
+  com.mysql.cj.jdbc.exceptions.MySQLTransactionRollbackException: Deadlock found when trying to get lock; try restarting transaction
+      at com.mysql.cj.jdbc.exceptions.SQLError.createSQLException(SQLError.java:118)
+      at com.mysql.cj.jdbc.exceptions.SQLError.createSQLException(SQLError.java:95)
+      at com.mysql.cj.jdbc.ClientPreparedStatement.executeUpdateInternal(ClientPreparedStatement.java:358)
+      at cn.metast.lingxi.module.inventory.service.InventoryBatchUpdater.updateStock(InventoryBatchUpdater.java:73)
+      at cn.metast.lingxi.module.inventory.service.InventoryBatchUpdater$$SpringCGLIB$$0.updateStock(<generated>)
+      at org.springframework.transaction.interceptor.TransactionInterceptor.invoke(TransactionInterceptor.java:119)
+  SQL: UPDATE inventory SET stock = stock - ? WHERE sku_id = ? AND warehouse_id = ?
+  Deadlock Log:
+    *** (1) HOLDS LOCK: idx_sku_warehouse (sku_id=1001, warehouse_id=5), WAITS FOR: idx_sku_warehouse (sku_id=1002, warehouse_id=5)
+    *** (2) HOLDS LOCK: idx_sku_warehouse (sku_id=1002, warehouse_id=5), WAITS FOR: idx_sku_warehouse (sku_id=1001, warehouse_id=5)
+environment:
+  language: Java
+  framework: Spring Boot 3.2 / MyBatis Plus 3.5
+  runtime: JDK 17
+  dependencies: MySQL Connector/J 8.2
+  database: MySQL 8.0
+seed_case_ids:
+  - seed-mysql-deadlock
+expected_root_cause_keywords:
+  - deadlock
+  - mysql
+  - batch update
+  - transaction
+  - lock order
+expected_fix_keywords:
+  - lock order
+  - retry
+  - optimistic lock
+  - sorted keys
+expected_top_hit_id: seed-mysql-deadlock

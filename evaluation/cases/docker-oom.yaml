@@ -1,0 +1,37 @@
+id: docker-oom
+bug_description: "Docker container killed by OOM killer due to Java heap exceeding cgroup memory limit"
+error_log: |
+  container exited with code 137 (OOMKilled)
+  docker inspect output:
+    "OOMKilled": true,
+    "ExitCode": 137,
+    "MemoryLimit": 536870912,
+    "MemoryUsage": 541065216
+  dmesg log:
+    [  283.451923] Memory cgroup out of memory: Kill process 32451 (java) score 950 or sacrifice child
+    [  283.451931] Killed process 32451 (java) total-vm:5242880kB, anon-rss:528384kB, file-rss:0kB, shmem-rss:0kB
+  JVM flags: -Xmx512m -Xms512m -XX:+UseG1GC
+  Container memory limit: 512MB (no swap)
+  Note: JVM overhead (metaspace, threads, native memory) not accounted for in -Xmx
+environment:
+  language: Java
+  framework: Spring Boot 3.2
+  runtime: JDK 17 (container image)
+  container: Docker 24.0 / Kubernetes 1.28
+  dependencies: Spring Actuator 3.2
+seed_case_ids:
+  - seed-docker-oom
+  - seed-spring-oom
+expected_root_cause_keywords:
+  - oomkilled
+  - docker
+  - cgroup
+  - memory limit
+  - container
+expected_fix_keywords:
+  - xmx
+  - memory limit
+  - jvm overhead
+  - max ram percentage
+  - swap
+expected_top_hit_id: seed-docker-oom

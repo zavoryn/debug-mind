@@ -1,0 +1,37 @@
+id: async-deadlock
+bug_description: "Python asyncio deadlock when two coroutines await each other's result via shared lock"
+error_log: |
+  Traceback (most recent call last):
+    File "/app/main.py", line 45, in <module>
+      asyncio.run(main())
+    File "/usr/lib/python3.11/asyncio/runners.py", line 190, in run
+      return runner.run(main)
+    File "/usr/lib/python3.11/asyncio/runners.py", line 118, in run
+      return self._loop.run_until_complete(task)
+    File "/app/services/pipeline.py", line 67, in process_batch
+      result = await asyncio.gather(fetch_data(), transform_data())
+    File "/app/services/data_fetcher.py", line 32, in fetch_data
+      async with self._lock:
+  RuntimeError: asyncio.locks.Lock is already acquired by the same coroutine
+    File "/app/services/transformer.py", line 41, in transform_data
+      async with self._lock:
+  concurrent.futures._base.CancelledError
+environment:
+  language: Python
+  framework: asyncio
+  runtime: CPython 3.11
+  dependencies: aiohttp 3.9
+seed_case_ids:
+  - seed-async-deadlock
+expected_root_cause_keywords:
+  - asyncio
+  - deadlock
+  - lock
+  - coroutine
+  - gather
+expected_fix_keywords:
+  - asyncio lock
+  - timeout
+  - reentrant
+  - acquire release
+expected_top_hit_id: seed-async-deadlock

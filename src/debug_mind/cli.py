@@ -354,11 +354,124 @@ def delete(case_id: str):
 
 
 @main.command()
+@click.argument("case_id")
+@click.option("--correct", "action", flag_value="correct", help="Mark case as verified correct")
+@click.option("--wrong", "action", flag_value="wrong", help="Mark case as incorrect (soft delete)")
+@click.option("--notes", default="", help="Verification or refutation notes")
+def verify(case_id: str, action: str | None, notes: str):
+    """Verify or reject a bug case diagnosis."""
+    if not action:
+        console.print("[red]Specify --correct or --wrong[/red]")
+        sys.exit(1)
+
+    memory = _get_memory()
+    if action == "correct":
+        ok = memory.verify(case_id, correct=True, notes=notes)
+        if ok:
+            console.print(f"[green]Case '{case_id}' marked as verified.[/green]")
+        else:
+            console.print(f"[red]Case '{case_id}' not found.[/red]")
+            sys.exit(1)
+    elif action == "wrong":
+        ok = memory.verify(case_id, correct=False, notes=notes)
+        if ok:
+            console.print(f"[yellow]Case '{case_id}' rejected and removed from index.[/yellow]")
+        else:
+            console.print(f"[red]Case '{case_id}' not found.[/red]")
+            sys.exit(1)
+
+
+@main.command()
+def dedupe():
+    """Scan for near-duplicate cases and list them for review."""
+    memory = _get_memory()
+    cases = memory.list_recent(limit=10000)
+
+    if len(cases) < 2:
+        console.print("[yellow]Not enough cases to check for duplicates.[/yellow]")
+        return
+
+    console.print(f"[bold blue]Checking {len(cases)} cases for near-duplicates...[/bold blue]")
+
+    dupes_found = 0
+    for i, c in enumerate(cases):
+        results = memory.search(query=c.to_search_text(), top_k=3, min_score=0.9)
+        for r in results:
+            if r.case.id != c.id:
+                dupes_found += 1
+                console.print(
+                    f"  [cyan]{c.id}[/cyan] <-> [cyan]{r.case.id}[/cyan] "
+                    f"(score: {r.score:.2f})"
+                )
+
+    if dupes_found == 0:
+        console.print("[green]No near-duplicates found.[/green]")
+    else:
+        console.print(f"\n[yellow]Found {dupes_found} potential duplicate pair(s).[/yellow]")
+        console.print("[dim]Use 'debug-mind verify <id> --wrong' to reject duplicates.[/dim]")
+
+
+@main.command()
 def serve():
     """Start the MCP server for external clients."""
     console.print("[bold blue]Starting DebugMind MCP Server...[/bold blue]")
     from debug_mind.tools.mcp_server import mcp
     mcp.run()
+
+
+@main.command()
+@click.option("--search-only", is_flag=True, help="Only evaluate retrieval, no API key needed")
+@click.option("--case", "case_id", default="", help="Run a single benchmark case by ID")
+@click.option("--json", "json_path", default="", help="Write machine-readable results to file")
+def eval(search_only: bool, case_id: str, json_path: str):
+    """Evaluate memory retrieval quality against benchmark dataset."""
+    from evaluation.dataset import load_all_cases, load_case
+    from evaluation.benchmark import run_eval, format_results
+
+    if case_id:
+        bc = load_case(case_id)
+        if not bc:
+            console.print(f"[red]Benchmark case '{case_id}' not found.[/red]")
+            sys.exit(1)
+        cases = [bc]
+    else:
+        cases = load_all_cases()
+
+    if not cases:
+        console.print("[red]No benchmark cases found.[/red]")
+        sys.exit(1)
+
+    console.print(f"[bold blue]Running evaluation with {len(cases)} case(s)...[/bold blue]")
+
+    result = run_eval(cases=cases, search_only=search_only)
+
+    console.print()
+    console.print(format_results(result))
+
+    if json_path:
+        import json as _json
+        output = {
+            "total": result.total,
+            "hit_at_1": result.hit_at_1,
+            "hit_at_3": result.hit_at_3,
+            "hit_at_5": result.hit_at_5,
+            "mrr": result.mrr,
+            "keyword_recall": result.keyword_recall,
+            "cases": [
+                {
+                    "id": cr.case_id,
+                    "hit_at_1": cr.hit_at_1,
+                    "hit_at_3": cr.hit_at_3,
+                    "hit_at_5": cr.hit_at_5,
+                    "mrr": cr.mrr,
+                    "keyword_recall": cr.keyword_recall,
+                    "top_hit_id": cr.top_hit_id,
+                }
+                for cr in result.case_results
+            ],
+        }
+        Path(json_path).write_text(_json.dumps(output, indent=2, ensure_ascii=False), encoding="utf-8")
+        console.print(f"\n[dim]Results written to {json_path}[/dim]")
 
 
 if __name__ == "__main__":

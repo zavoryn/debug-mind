@@ -20,6 +20,7 @@ import anthropic
 from debug_mind.schemas import BugCase, DiagnosisResult, Severity, BugStatus
 from debug_mind.memory.store import MemoryStore
 from debug_mind.skills.codebase import search_code, read_file, list_project_structure
+from debug_mind.tools.schemas import MEMORY_TOOLS as _MEMORY_TOOLS, CODEBASE_TOOLS as _CODEBASE_TOOLS
 
 SYSTEM_PROMPT = """You are DebugMind, an expert bug diagnosis agent with access to:
 1. **Experiential Memory** — a knowledge base of past bug diagnoses.
@@ -40,87 +41,14 @@ SYSTEM_PROMPT = """You are DebugMind, an expert bug diagnosis agent with access 
 - Reference similar past cases when available — they shortcut the diagnosis.
 - Be specific: cite file names, line numbers, method names.
 - Provide copy-paste-ready fix suggestions.
+- Prefer verified=True cases; if only unverified cases match, explain and lower confidence.
 
 Respond in the user's language. Be concise but thorough."""
 
-# ── Tool Definitions ────────────────────────────────────────────────
+# ── Tool Definitions (imported from shared schema module) ─────────────
 
-MEMORY_TOOLS = [
-    {
-        "name": "search_memory",
-        "description": "Search past bug cases in the experiential memory. ALWAYS call this first.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "Bug symptoms, error, or keywords"},
-                "top_k": {"type": "integer", "description": "Max results (default 5)", "default": 5},
-            },
-            "required": ["query"],
-        },
-    },
-    {
-        "name": "save_to_memory",
-        "description": "Save a diagnosed bug case to memory. Call AFTER completing diagnosis.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "title": {"type": "string", "description": "Short searchable title"},
-                "symptoms": {"type": "string", "description": "What was observed"},
-                "error_log": {"type": "string", "description": "Raw error log or stack trace"},
-                "root_cause": {"type": "string", "description": "The identified root cause"},
-                "fix_suggestion": {"type": "string", "description": "How to fix it"},
-                "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
-                "tags": {"type": "array", "items": {"type": "string"}, "description": "Searchable tags"},
-                "environment": {
-                    "type": "object",
-                    "additionalProperties": {"type": "string"},
-                    "description": "Environment context",
-                },
-                "diagnosis_steps": {"type": "array", "items": {"type": "string"}},
-                "similar_case_ids": {"type": "array", "items": {"type": "string"}},
-            },
-            "required": ["title", "symptoms", "root_cause", "fix_suggestion"],
-        },
-    },
-]
-
-CODEBASE_TOOLS = [
-    {
-        "name": "search_code",
-        "description": "Search the project source code for a pattern. Returns file:line:content matches.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "pattern": {"type": "string", "description": "Search pattern (supports regex)"},
-                "file_type": {"type": "string", "description": "File extension filter (e.g. 'java', 'py')"},
-            },
-            "required": ["pattern"],
-        },
-    },
-    {
-        "name": "read_file",
-        "description": "Read a source file from the project. Use after search_code to inspect specific code.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "file_path": {"type": "string", "description": "Relative path from project root"},
-                "start_line": {"type": "integer", "description": "Start line (0-based, default 0)", "default": 0},
-                "end_line": {"type": "integer", "description": "End line (default 100)", "default": 100},
-            },
-            "required": ["file_path"],
-        },
-    },
-    {
-        "name": "list_project_structure",
-        "description": "Get the directory tree of the project. Use to understand project layout.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "depth": {"type": "integer", "description": "Directory depth (default 3)", "default": 3},
-            },
-        },
-    },
-]
+MEMORY_TOOLS = _MEMORY_TOOLS
+CODEBASE_TOOLS = _CODEBASE_TOOLS
 
 
 class DiagnosticAgent:
@@ -202,11 +130,20 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
         max_turns = 20
         for _ in range(max_turns):
             try:
+                # D4: Prompt caching — cache system prompt and last tool to reduce cost
+                cache_control = {"type": "ephemeral"}
+                cached_tools = []
+                for i, tool in enumerate(self.tools):
+                    if i == len(self.tools) - 1:
+                        cached_tools.append({**tool, "cache_control": cache_control})
+                    else:
+                        cached_tools.append(tool)
+
                 response = self.client.messages.create(
                     model=self.model,
                     max_tokens=4096,
-                    system=SYSTEM_PROMPT,
-                    tools=self.tools,
+                    system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": cache_control}],
+                    tools=cached_tools,
                     messages=messages,
                 )
             except anthropic.APIError as e:
@@ -259,6 +196,15 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
         )
         saved_case = self.memory.get(saved_case_id) if saved_case_id else None
 
+        # D5: If final_text is empty (e.g. max_turns exhausted with all tool_use),
+        # fall back to saved_case fields
+        if not final_text and saved_case:
+            final_text = f"Root cause: {saved_case.root_cause}\nFix: {saved_case.fix_suggestion}"
+
+        # Mark adopted similar cases as used
+        for cid in similar_case_ids:
+            self.memory.mark_used(cid)
+
         diag = DiagnosisResult(
             case_id=saved_case.id if saved_case else "unknown",
             root_cause=saved_case.root_cause if saved_case else final_text,
@@ -285,6 +231,8 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
                         "root_cause": r.case.root_cause,
                         "fix_suggestion": r.case.fix_suggestion,
                         "tags": r.case.tags,
+                        "verified": r.case.verified,
+                        "hit_count": r.case.hit_count,
                     }
                     for r in results
                 ],

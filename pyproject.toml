@@ -26,6 +26,7 @@ dependencies = [
     "rich>=13.0",
     "mcp>=1.0.0",
     "python-dotenv>=1.0.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -33,6 +34,9 @@ dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.4"]
 
 [project.scripts]
 debug-mind = "debug_mind.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/debug_mind", "evaluation"]
 
 [tool.ruff]
 line-length = 100

@@ -1,0 +1,26 @@
+id: spring-circular-dep
+bug_description: "Spring Boot fails to start due to circular dependency between OrderService and PaymentService"
+error_log: |
+  org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'orderService' defined in file [/app/classes/cn/metast/lingxi/module/order/service/OrderService.class]: Unsatisfied dependency expressed through constructor parameter 1; nested exception is org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'paymentService': Unsatisfied dependency expressed through constructor parameter 0; nested exception is org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'orderService': Requested bean is currently in creation, making it unable to reference
+      at org.springframework.beans.factory.support.ConstructorResolver.createArgumentArray(ConstructorResolver.java:795)
+      at org.springframework.beans.factory.support.ConstructorResolver.autowireConstructor(ConstructorResolver.java:240)
+      at cn.metast.lingxi.module.order.service.OrderService.<init>(OrderService.java:25)
+      at cn.metast.lingxi.module.payment.service.PaymentService.<init>(PaymentService.java:18)
+environment:
+  language: Java
+  framework: Spring Boot 3.2
+  runtime: JDK 17
+  dependencies: Spring Context 6.1
+seed_case_ids:
+  - seed-spring-circular
+expected_root_cause_keywords:
+  - circular dependency
+  - bean creation
+  - unsatisfied dependency
+  - constructor injection
+expected_fix_keywords:
+  - lazy
+  - setter injection
+  - refactor
+  - event
+expected_top_hit_id: seed-spring-circular

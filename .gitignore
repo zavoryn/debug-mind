@@ -9,3 +9,6 @@ build/
 .ruff_cache/
 .pytest_cache/
 memory/store/
+memory/chroma/
+memory/cases/
+memory/audit.jsonl

@@ -1,0 +1,32 @@
+id: hikari-pool-exhaust
+bug_description: "HikariCP connection pool exhausted under sustained concurrent request load"
+error_log: |
+  java.sql.SQLTransientConnectionException: HikariPool-1 - Connection is not available, request timed out after 30000ms.
+      at com.zaxxer.hikari.pool.HikariPool.createTimeoutException(HikariPool.java:672)
+      at com.zaxxer.hikari.pool.HikariPool.getConnection(HikariPool.java:196)
+      at com.zaxxer.hikari.pool.HikariPool.getConnection(HikariPool.java:148)
+      at com.zaxxer.hikari.HikariDataSource.getConnection(HikariDataSource.java:100)
+      at org.springframework.jdbc.datasource.DataSourceTransactionManager.doBegin(DataSourceTransactionManager.java:324)
+      at cn.metast.lingxi.module.trade.service.TradeService.processOrder(TradeService.java:55)
+  HikariPool-1 stats: active=20, idle=0, waiting=47, total=20, max=20
+  Warning: 47 threads waiting for connection, average wait 28452ms
+environment:
+  language: Java
+  framework: Spring Boot 3.2 / MyBatis Plus 3.5
+  runtime: JDK 17
+  dependencies: HikariCP 5.1, MySQL Connector/J 8.2
+  database: MySQL 8.0
+seed_case_ids:
+  - seed-hikari-exhaust
+expected_root_cause_keywords:
+  - hikaricp
+  - connection pool
+  - timeout
+  - exhausted
+  - leak
+expected_fix_keywords:
+  - maximum-pool-size
+  - connection timeout
+  - leak detection
+  - idle timeout
+expected_top_hit_id: seed-hikari-exhaust

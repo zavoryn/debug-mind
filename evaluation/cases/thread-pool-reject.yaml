@@ -1,0 +1,32 @@
+id: thread-pool-reject
+bug_description: "ThreadPoolExecutor rejects tasks under burst load due to saturated queue and maxed-out threads"
+error_log: |
+  java.util.concurrent.RejectedExecutionException: Task cn.metast.lingxi.module.notification.service.NotificationService$$Lambda$1682/0x0000000801137028@5a3c4e7f rejected from java.util.concurrent.ThreadPoolExecutor@3b6e2c5d[Running, pool size = 50, active threads = 50, queued tasks = 2000, completed tasks = 184729]
+      at java.base/java.util.concurrent.ThreadPoolExecutor$AbortPolicy.rejectedExecution(ThreadPoolExecutor.java:2065)
+      at java.base/java.util.concurrent.ThreadPoolExecutor.reject(ThreadPoolExecutor.java:833)
+      at java.base/java.util.concurrent.ThreadPoolExecutor.execute(ThreadPoolExecutor.java:1379)
+      at cn.metast.lingxi.module.notification.service.NotificationService.sendBulkNotification(NotificationService.java:94)
+      at cn.metast.lingxi.module.notification.controller.NotificationController.broadcast(NotificationController.java:47)
+      at jakarta.servlet.http.HttpServlet.service(HttpServlet.java:652)
+  ThreadPool config: corePoolSize=50, maxPoolSize=50, queueCapacity=2000, rejectionPolicy=Abort
+  Incoming request rate: 3,200 req/s (sustained for 45 seconds)
+environment:
+  language: Java
+  framework: Spring Boot 3.2
+  runtime: JDK 17
+  dependencies: Spring Context 6.1
+seed_case_ids:
+  - seed-threadpool-reject
+expected_root_cause_keywords:
+  - rejectedexecution
+  - thread pool
+  - saturated
+  - queue full
+  - burst load
+expected_fix_keywords:
+  - caller runs policy
+  - increase pool size
+  - queue capacity
+  - backpressure
+  - async retry
+expected_top_hit_id: seed-threadpool-reject

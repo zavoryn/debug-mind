@@ -69,7 +69,9 @@ def read_file(file_path: str, project_path: str, start_line: int = 0, end_line: 
     try:
         full_path = full_path.resolve(strict=True)
         project_root = Path(project_path).resolve(strict=True)
-        if not str(full_path).startswith(str(project_root)):
+        try:
+            full_path.relative_to(project_root)
+        except ValueError:
             return {"error": "Access denied: file is outside the project directory"}
     except FileNotFoundError:
         return {"error": f"File not found: {file_path}"}

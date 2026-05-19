@@ -62,6 +62,13 @@ class BugCase(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+    # Feedback & dedup fields
+    verified: bool = Field(default=False, description="Confirmed correct by user/author")
+    verification_notes: str = Field(default="", description="Verification or refutation notes")
+    hit_count: int = Field(default=0, description="Times this case was retrieved and adopted by agent")
+    last_used_at: datetime | None = Field(default=None, description="Last time this case was adopted")
+    superseded_by: str | None = Field(default=None, description="ID of the case that replaced this one")
+
     def to_search_text(self) -> str:
         """Build a single text blob for embedding — includes all searchable content."""
         parts = [

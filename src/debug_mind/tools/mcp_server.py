@@ -10,7 +10,7 @@ Tools exposed:
   - save_bug_case: Save a new diagnosed case to memory
   - list_recent_bugs: List recently diagnosed cases
   - get_bug_stats: Get memory store statistics
-  - diagnose_bug: Run full diagnosis (optionally on a codebase)
+  - verify_bug_case: Mark a case as verified correct or rejected
 """
 
 from __future__ import annotations
@@ -58,6 +58,8 @@ def search_similar_bugs(query: str, top_k: int = 5) -> str:
                 "root_cause": r.case.root_cause,
                 "fix": r.case.fix_suggestion,
                 "tags": r.case.tags,
+                "verified": r.case.verified,
+                "hit_count": r.case.hit_count,
             }
             for r in results
         ],
@@ -76,6 +78,7 @@ def save_bug_case(
     tags: Optional[list[str]] = None,
     environment: Optional[dict[str, str]] = None,
     diagnosis_steps: Optional[list[str]] = None,
+    similar_case_ids: Optional[list[str]] = None,
 ) -> str:
     """Save a diagnosed bug case to the experiential memory.
 
@@ -95,6 +98,7 @@ def save_bug_case(
         tags=tags or [],
         environment=environment or {},
         diagnosis_steps=diagnosis_steps or [],
+        similar_case_ids=similar_case_ids or [],
     )
 
     memory.save(case)
@@ -151,6 +155,22 @@ def delete_bug_case(case_id: str) -> str:
     if not deleted:
         return json.dumps({"error": f"Case {case_id} not found"}, ensure_ascii=False)
     return json.dumps({"deleted": True, "case_id": case_id}, ensure_ascii=False)
+
+
+@mcp.tool()
+def verify_bug_case(case_id: str, correct: bool, notes: str = "") -> str:
+    """Verify a bug case as correct or mark it as wrong.
+
+    correct=True marks the case as verified; correct=False removes it from
+    the search index (soft delete — markdown file kept with .rejected suffix).
+    """
+    memory = _get_memory()
+    ok = memory.verify(case_id, correct=correct, notes=notes)
+    if not ok:
+        return json.dumps({"error": f"Case {case_id} not found"}, ensure_ascii=False)
+    if correct:
+        return json.dumps({"verified": True, "case_id": case_id}, ensure_ascii=False)
+    return json.dumps({"rejected": True, "case_id": case_id}, ensure_ascii=False)
 
 
 if __name__ == "__main__":

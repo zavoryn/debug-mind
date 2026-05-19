@@ -1,0 +1,34 @@
+id: spring-oom
+bug_description: "Spring Boot OOM when loading 2M records from database into memory without pagination"
+error_log: |
+  java.lang.OutOfMemoryError: Java heap space
+      at java.base/java.util.ArrayList.grow(ArrayList.java:571)
+      at java.base/java.util.ArrayList.grow(ArrayList.java:564)
+      at java.base/java.util.ArrayList.add(ArrayList.java:493)
+      at cn.metast.lingxi.module.report.service.ReportExportService.exportAllTransactions(ReportExportService.java:88)
+      at cn.metast.lingxi.module.report.service.ReportExportService$$SpringCGLIB$$0.exportAllTransactions(<generated>)
+      at cn.metast.lingxi.module.report.controller.ReportController.export(ReportController.java:35)
+      at jakarta.servlet.http.HttpServlet.service(HttpServlet.java:652)
+  Heap dump created: /tmp/java_pid32451.hprof
+  Total records queried: 2,145,678
+  Available heap: 512MB
+environment:
+  language: Java
+  framework: Spring Boot 3.2 / JPA Hibernate 6.4
+  runtime: JDK 17 (-Xmx512m)
+  dependencies: MySQL Connector/J 8.2
+seed_case_ids:
+  - seed-spring-oom
+expected_root_cause_keywords:
+  - outofmemory
+  - heap space
+  - pagination
+  - large result set
+  - batch
+expected_fix_keywords:
+  - stream
+  - pagination
+  - cursor
+  - fetch size
+  - batch processing
+expected_top_hit_id: seed-spring-oom

@@ -1,0 +1,30 @@
+id: redis-pool-npe
+bug_description: "NPE in UserService.login when Redis pool exhausted during peak traffic"
+error_log: |
+  java.lang.NullPointerException: Cannot invoke "String.equals(Object)" because the return value of "redis.clients.jedis.Jedis.get(String)" is null
+      at cn.metast.lingxi.module.user.service.UserService.login(UserService.java:42)
+      at cn.metast.lingxi.module.user.controller.UserController.login(UserController.java:28)
+      at jakarta.servlet.http.HttpServlet.service(HttpServlet.java:652)
+      at org.springframework.web.servlet.FrameworkServlet.service(FrameworkServlet.java:885)
+  Caused by: redis.clients.jedis.exceptions.JedisConnectionException: Could not get a resource from the pool
+      at redis.clients.jedis.util.Pool.getResource(Pool.java:50)
+      at redis.clients.jedis.JedisPool.getResource(JedisPool.java:30)
+environment:
+  language: Java
+  framework: Spring Boot 3.2
+  runtime: JDK 17
+  dependencies: Jedis 5.1, Spring Data Redis
+seed_case_ids:
+  - seed-redis-pool
+expected_root_cause_keywords:
+  - redis
+  - connection pool
+  - "null"
+  - exhausted
+  - jedis
+expected_fix_keywords:
+  - max-active
+  - null check
+  - pool size
+  - max-total
+expected_top_hit_id: seed-redis-pool

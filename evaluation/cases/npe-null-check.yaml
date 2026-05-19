@@ -1,0 +1,31 @@
+id: npe-null-check
+bug_description: "Generic NPE caused by missing null check on optional chain result"
+error_log: |
+  java.lang.NullPointerException: Cannot invoke "java.util.List.size()" because the return value of "cn.metast.lingxi.module.user.mapper.UserMapper.selectByCondition(UserQueryCondition)" is null
+      at cn.metast.lingxi.module.user.service.UserQueryService.findActiveUsers(UserQueryService.java:53)
+      at cn.metast.lingxi.module.user.service.UserQueryService$$SpringCGLIB$$0.findActiveUsers(<generated>)
+      at cn.metast.lingxi.module.user.controller.UserController.listActive(UserController.java:41)
+      at jakarta.servlet.http.HttpServlet.service(HttpServlet.java:652)
+      at org.springframework.web.servlet.FrameworkServlet.service(FrameworkServlet.java:885)
+      at org.apache.catalina.connector.CoyoteAdapter.service(CoyoteAdapter.java:341)
+  Mapper returned null instead of empty list for query condition: {status=ACTIVE, tenantId=null}
+environment:
+  language: Java
+  framework: Spring Boot 3.2 / MyBatis Plus 3.5
+  runtime: JDK 17
+  dependencies: MyBatis Plus 3.5
+seed_case_ids:
+  - seed-npe-generic
+expected_root_cause_keywords:
+  - nullpointerexception
+  - null check
+  - optional
+  - mapper
+  - missing guard
+expected_fix_keywords:
+  - null check
+  - optional
+  - empty list
+  - objects.requirenonnull
+  - default value
+expected_top_hit_id: seed-npe-generic

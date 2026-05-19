@@ -1,0 +1,33 @@
+id: kafka-consumer-lag
+bug_description: "Kafka consumer group lag spike due to slow deserialization and blocking processing"
+error_log: |
+  org.apache.kafka.clients.consumer.CommitFailedException: Commit cannot be completed since the group has already rebalanced and assigned the partitions to another member. This means that the time between subsequent calls to poll() was longer than the configured max.poll.interval.ms, which typically implies that the poll loop is spending too much time processing messages.
+      at org.apache.kafka.clients.consumer.internals.ConsumerCoordinator.sendOffsetCommitRequest(ConsumerCoordinator.java:1056)
+      at org.apache.kafka.clients.consumer.internals.ConsumerCoordinator.commitOffsetsSync(ConsumerCoordinator.java:931)
+      at org.apache.kafka.clients.consumer.KafkaConsumer.commitSync(KafkaConsumer.java:1529)
+      at cn.metast.lingxi.module.message.consumer.OrderEventConsumer.handleBatch(OrderEventConsumer.java:62)
+      at org.springframework.kafka.listener.KafkaMessageListenerContainer$ListenerConsumer.invokeListener(KafkaMessageListenerContainer.java:2931)
+  Consumer group: order-processor-group
+  Current lag: 1,245,000 (topic: order-events, partitions: 12)
+  max.poll.interval.ms: 300000 (5 minutes)
+  Average processing time per batch: 420000ms (7 minutes)
+environment:
+  language: Java
+  framework: Spring Boot 3.2 / Spring Kafka 3.1
+  runtime: JDK 17
+  dependencies: Kafka Clients 3.6
+  broker: Apache Kafka 3.6
+seed_case_ids:
+  - seed-kafka-lag
+expected_root_cause_keywords:
+  - kafka
+  - consumer lag
+  - rebalance
+  - poll interval
+  - slow processing
+expected_fix_keywords:
+  - max poll records
+  - concurrency
+  - batch size
+  - async processing
+expected_top_hit_id: seed-kafka-lag
