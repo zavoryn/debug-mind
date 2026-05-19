@@ -345,7 +345,8 @@ Phase 2 解决这七件事 + 一个补 hit_count 进 ranking 的实验性增强�
 格式：`[YYYY-MM-DDTHH:MM] [TASK P2-X] 简述 + 关键数字 + 取舍`
 
 ```
-[填] [BASELINE] pytest 通过 122 / 失败 0 / 跳过 0；eval search-only hit@1=0.92 MRR=0.96
+[2026-05-19] [BASELINE] pytest 通过 126 / 失败 1(pre-existing: worktree路径导致rg失败) / 新增0；无 eval 命令（工作单数据与实际不符，以 126 为基线）
+[2026-05-19] [TASK P2-1] 并发安全完成：filelock>=3.12，30s timeout，save/delete/verify/mark_used/rebuild_index 均包锁，读不加锁。MemoryBusyError CLI 友好提示。新增 tests/test_concurrency.py（5测试：10进程并发save、锁超时、delete锁、读无锁）。pytest 131 passed / 1 pre-existing fail。取舍：merge master 后 _find_dedup_target+锁共存，dedup 在锁内执行（更安全，略增锁持有时间）。
 ```
 
 ---

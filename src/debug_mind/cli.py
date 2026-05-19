@@ -33,7 +33,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from debug_mind.memory.store import MemoryStore
+from debug_mind.memory.store import MemoryStore, MemoryBusyError
 from debug_mind.schemas import DiagnosisResult
 
 # Load .env before anything else
@@ -123,15 +123,23 @@ def diagnose(description: str, log: str, env: str, project: str, severity: str, 
     agent = DiagnosticAgent(memory=memory, project_path=project_path, api_key=api_key)
 
     if no_stream:
-        with console.status("[bold blue]Agent is diagnosing..."):
-            result = agent.diagnose(
-                bug_description=description,
-                error_log=error_log,
-                environment=environment,
-            )
+        try:
+            with console.status("[bold blue]Agent is diagnosing..."):
+                result = agent.diagnose(
+                    bug_description=description,
+                    error_log=error_log,
+                    environment=environment,
+                )
+        except MemoryBusyError as e:
+            console.print(f"[red]Error: {e}[/red]")
+            sys.exit(1)
         _print_result(result)
     else:
-        result = _stream_diagnose(agent, description, error_log, environment)
+        try:
+            result = _stream_diagnose(agent, description, error_log, environment)
+        except MemoryBusyError as e:
+            console.print(f"[red]Error: {e}[/red]")
+            sys.exit(1)
         _print_result(result)
 
 
@@ -302,8 +310,12 @@ def stats():
 def rebuild():
     """Rebuild the vector index from Markdown files."""
     memory = _get_memory()
-    with console.status("[bold blue]Rebuilding vector index..."):
-        count = memory.rebuild_index()
+    try:
+        with console.status("[bold blue]Rebuilding vector index..."):
+            count = memory.rebuild_index()
+    except MemoryBusyError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
     console.print(f"[green]Rebuilt index with {count} cases.[/green]")
 
 
@@ -345,7 +357,11 @@ def show(case_id: str):
 def delete(case_id: str):
     """Delete a bug case from memory."""
     memory = _get_memory()
-    deleted = memory.delete(case_id)
+    try:
+        deleted = memory.delete(case_id)
+    except MemoryBusyError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
     if deleted:
         console.print(f"[green]Case '{case_id}' deleted.[/green]")
     else:
@@ -365,20 +381,24 @@ def verify(case_id: str, action: str | None, notes: str):
         sys.exit(1)
 
     memory = _get_memory()
-    if action == "correct":
-        ok = memory.verify(case_id, correct=True, notes=notes)
-        if ok:
-            console.print(f"[green]Case '{case_id}' marked as verified.[/green]")
-        else:
-            console.print(f"[red]Case '{case_id}' not found.[/red]")
-            sys.exit(1)
-    elif action == "wrong":
-        ok = memory.verify(case_id, correct=False, notes=notes)
-        if ok:
-            console.print(f"[yellow]Case '{case_id}' rejected and removed from index.[/yellow]")
-        else:
-            console.print(f"[red]Case '{case_id}' not found.[/red]")
-            sys.exit(1)
+    try:
+        if action == "correct":
+            ok = memory.verify(case_id, correct=True, notes=notes)
+            if ok:
+                console.print(f"[green]Case '{case_id}' marked as verified.[/green]")
+            else:
+                console.print(f"[red]Case '{case_id}' not found.[/red]")
+                sys.exit(1)
+        elif action == "wrong":
+            ok = memory.verify(case_id, correct=False, notes=notes)
+            if ok:
+                console.print(f"[yellow]Case '{case_id}' rejected and removed from index.[/yellow]")
+            else:
+                console.print(f"[red]Case '{case_id}' not found.[/red]")
+                sys.exit(1)
+    except MemoryBusyError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
 
 
 @main.command()

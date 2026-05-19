@@ -19,11 +19,17 @@ from datetime import datetime, timezone
 
 import chromadb
 
+from filelock import FileLock, Timeout as FileLockTimeout
+
 from debug_mind.schemas import BugCase, SearchResult, MemoryStats, Severity, BugStatus
 
 COLLECTION_NAME = "bug_cases"
 DEFAULT_MEMORY_DIR = Path(os.environ.get("DEBUG_MIND_MEMORY_DIR", "memory"))
 DEDUP_THRESHOLD = float(os.environ.get("DEBUG_MIND_DEDUP_THRESHOLD", "0.92"))
+
+
+class MemoryBusyError(Exception):
+    """Raised when a write operation cannot acquire the memory lock within timeout."""
 
 
 class MemoryStore:
@@ -40,6 +46,8 @@ class MemoryStore:
         self.cases_dir.mkdir(parents=True, exist_ok=True)
         self.reranker = reranker
 
+        self._lock = FileLock(str(self.memory_dir / ".lock"), timeout=30)
+
         self.client = chromadb.PersistentClient(path=str(self.memory_dir / "chroma"))
 
         collection_kwargs: dict = {
@@ -55,23 +63,23 @@ class MemoryStore:
 
     def save(self, case: BugCase) -> BugCase:
         """Persist a bug case. Deduplicates against verified existing cases."""
-        case.updated_at = datetime.now(timezone.utc)
-
-        # Dedup: if a very similar verified case exists, merge instead of creating new
-        existing = self._find_dedup_target(case)
-        if existing:
-            return existing
-
-        # Write markdown first (source of truth), then upsert vector
-        self._save_to_markdown(case)
-
         try:
-            self._save_to_vector(case)
-        except Exception as e:
-            # Vector write failure is non-fatal — rebuild_index will fix it
-            import logging
-            logging.getLogger(__name__).warning(f"Vector upsert failed for {case.id}: {e}")
+            with self._lock:
+                case.updated_at = datetime.now(timezone.utc)
 
+                existing = self._find_dedup_target(case)
+                if existing:
+                    return existing
+
+                self._save_to_markdown(case)
+
+                try:
+                    self._save_to_vector(case)
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).warning(f"Vector upsert failed for {case.id}: {e}")
+        except FileLockTimeout:
+            raise MemoryBusyError("Memory is busy — another process is writing. Retry in a moment.")
         return case
 
     def _find_dedup_target(self, case: BugCase) -> BugCase | None:
@@ -266,11 +274,15 @@ class MemoryStore:
         md_path = self.cases_dir / f"{case_id}.md"
         if not md_path.exists():
             return False
-        md_path.unlink()
         try:
-            self.collection.delete(ids=[case_id])
-        except Exception:
-            pass
+            with self._lock:
+                md_path.unlink()
+                try:
+                    self.collection.delete(ids=[case_id])
+                except Exception:
+                    pass
+        except FileLockTimeout:
+            raise MemoryBusyError("Memory is busy — another process is writing. Retry in a moment.")
         return True
 
     # ── Feedback ──────────────────────────────────────────────────
@@ -280,13 +292,17 @@ class MemoryStore:
         case = self.get(case_id)
         if not case:
             return
-        case.hit_count += 1
-        case.last_used_at = datetime.now(timezone.utc)
-        self._save_to_markdown(case)
         try:
-            self._save_to_vector(case)
-        except Exception:
-            pass
+            with self._lock:
+                case.hit_count += 1
+                case.last_used_at = datetime.now(timezone.utc)
+                self._save_to_markdown(case)
+                try:
+                    self._save_to_vector(case)
+                except Exception:
+                    pass
+        except FileLockTimeout:
+            raise MemoryBusyError("Memory is busy — another process is writing. Retry in a moment.")
 
     def verify(self, case_id: str, correct: bool, notes: str = "") -> bool:
         """Mark a case as verified (correct=True) or rejected (correct=False).
@@ -301,23 +317,26 @@ class MemoryStore:
         if not case:
             return False
 
-        if correct:
-            case.verified = True
-            case.verification_notes = notes
-            case.updated_at = datetime.now(timezone.utc)
-            self._save_to_markdown(case)
-            try:
-                self._save_to_vector(case)
-            except Exception:
-                pass
-        else:
-            # Soft delete: rename to .rejected, remove from vector store
-            rejected_path = self.cases_dir / f"{case_id}.md.rejected"
-            md_path.rename(rejected_path)
-            try:
-                self.collection.delete(ids=[case_id])
-            except Exception:
-                pass
+        try:
+            with self._lock:
+                if correct:
+                    case.verified = True
+                    case.verification_notes = notes
+                    case.updated_at = datetime.now(timezone.utc)
+                    self._save_to_markdown(case)
+                    try:
+                        self._save_to_vector(case)
+                    except Exception:
+                        pass
+                else:
+                    rejected_path = self.cases_dir / f"{case_id}.md.rejected"
+                    md_path.rename(rejected_path)
+                    try:
+                        self.collection.delete(ids=[case_id])
+                    except Exception:
+                        pass
+        except FileLockTimeout:
+            raise MemoryBusyError("Memory is busy — another process is writing. Retry in a moment.")
         return True
 
     # ── Rebuild ────────────────────────────────────────────────────
@@ -325,10 +344,14 @@ class MemoryStore:
     def rebuild_index(self) -> int:
         """Rebuild the vector index from all Markdown files. Returns count of indexed cases."""
         md_files = list(self.cases_dir.glob("*.md"))
-        for md_path in md_files:
-            case = _markdown_to_case(md_path)
-            if case:
-                self._save_to_vector(case)
+        try:
+            with self._lock:
+                for md_path in md_files:
+                    case = _markdown_to_case(md_path)
+                    if case:
+                        self._save_to_vector(case)
+        except FileLockTimeout:
+            raise MemoryBusyError("Memory is busy — another process is writing. Retry in a moment.")
         return len(md_files)
 
 
