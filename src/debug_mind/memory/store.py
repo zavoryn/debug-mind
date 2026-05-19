@@ -22,6 +22,9 @@ import chromadb
 from filelock import FileLock, Timeout as FileLockTimeout
 
 from debug_mind.schemas import BugCase, SearchResult, MemoryStats, Severity, BugStatus
+from debug_mind.observability.logger import get_logger
+
+_log = get_logger("memory")
 
 COLLECTION_NAME = "bug_cases"
 DEFAULT_MEMORY_DIR = Path(os.environ.get("DEBUG_MIND_MEMORY_DIR", "memory"))
@@ -76,10 +79,10 @@ class MemoryStore:
                 try:
                     self._save_to_vector(case)
                 except Exception as e:
-                    import logging
-                    logging.getLogger(__name__).warning(f"Vector upsert failed for {case.id}: {e}")
+                    _log.warning(f"Vector upsert failed for {case.id}: {e}")
         except FileLockTimeout:
             raise MemoryBusyError("Memory is busy — another process is writing. Retry in a moment.")
+        _log.info("case saved", extra={"op": "save", "case_id": case.id})
         return case
 
     def _find_dedup_target(self, case: BugCase) -> BugCase | None:
@@ -283,6 +286,7 @@ class MemoryStore:
                     pass
         except FileLockTimeout:
             raise MemoryBusyError("Memory is busy — another process is writing. Retry in a moment.")
+        _log.info("case deleted", extra={"op": "delete", "case_id": case_id})
         return True
 
     # ── Feedback ──────────────────────────────────────────────────
@@ -303,6 +307,7 @@ class MemoryStore:
                     pass
         except FileLockTimeout:
             raise MemoryBusyError("Memory is busy — another process is writing. Retry in a moment.")
+        _log.info("case marked used", extra={"op": "mark_used", "case_id": case_id})
 
     def verify(self, case_id: str, correct: bool, notes: str = "") -> bool:
         """Mark a case as verified (correct=True) or rejected (correct=False).
@@ -337,6 +342,7 @@ class MemoryStore:
                         pass
         except FileLockTimeout:
             raise MemoryBusyError("Memory is busy — another process is writing. Retry in a moment.")
+        _log.info("case verified", extra={"op": "verify", "case_id": case_id, "saved": correct})
         return True
 
     # ── Rebuild ────────────────────────────────────────────────────

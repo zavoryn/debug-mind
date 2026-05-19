@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import json
 import os
+import time
+import uuid
 from typing import Any, Generator
 
 import anthropic
@@ -22,6 +24,9 @@ from debug_mind.memory.store import MemoryStore
 from debug_mind.skills.codebase import search_code, read_file, list_project_structure
 from debug_mind.tools.schemas import MEMORY_TOOLS as _MEMORY_TOOLS, CODEBASE_TOOLS as _CODEBASE_TOOLS
 from debug_mind.budget import TokenBudget
+from debug_mind.observability.logger import get_logger, _try_otel_span
+
+_log = get_logger("agent")
 
 SYSTEM_PROMPT = """You are DebugMind, an expert bug diagnosis agent with access to:
 1. **Experiential Memory** — a knowledge base of past bug diagnoses.
@@ -124,6 +129,10 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
         stream: bool = False,
     ) -> Generator[tuple[str, Any], None, None]:
         """Core ReAct loop shared by diagnose() and diagnose_stream()."""
+        trace_id = uuid.uuid4().hex[:16]
+        _log.info("diagnosis started", extra={"trace_id": trace_id})
+        _try_otel_span(trace_id)
+
         user_message = self._build_user_message(bug_description, error_log, environment)
         messages: list[dict[str, Any]] = [{"role": "user", "content": user_message}]
         diagnosis_steps: list[str] = []
@@ -157,6 +166,12 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
             # Budget tracking
             if self.budget and response.usage:
                 self.budget.record(response.usage)
+                _log.info("LLM response", extra={
+                    "trace_id": trace_id,
+                    "model": self.model,
+                    "tokens_in": getattr(response.usage, "input_tokens", 0),
+                    "tokens_out": getattr(response.usage, "output_tokens", 0),
+                })
                 exceeded, reason = self.budget.is_exceeded()
                 if exceeded:
                     if stream:
@@ -187,7 +202,17 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
                 if stream:
                     yield ("tool_call", {"name": block.name, "input": block.input})
 
+                t0 = time.monotonic()
                 result, side_effect = self._execute_tool(block.name, block.input)
+                latency_ms = int((time.monotonic() - t0) * 1000)
+
+                _log.info("tool call", extra={
+                    "trace_id": trace_id,
+                    "tool": block.name,
+                    "latency_ms": latency_ms,
+                    "found": result.get("found") if isinstance(result, dict) else None,
+                    "saved": result.get("saved") if isinstance(result, dict) else None,
+                })
 
                 if stream:
                     yield ("tool_result", {"name": block.name, "result": result})
