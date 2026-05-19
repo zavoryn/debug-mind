@@ -351,6 +351,7 @@ Phase 2 解决这七件事 + 一个补 hit_count 进 ranking 的实验性增强�
 [2026-05-19] [TASK P2-3] 结构化日志完成：observability/logger.py（JSONFormatter + get_logger），DEBUG_MIND_LOG_FORMAT=json|text，DEBUG_MIND_LOG_FILE=path。trace_id 每诊断生成。MemoryStore save/delete/mark_used/verify 各一条 INFO log。Agent tool call 带 latency_ms、tokens_in/out。OTel hook（_try_otel_span）可选，opentelemetry-api 在 [observability] optional deps。CLI 不设 env 时输出不变。新增 tests/test_structured_logging.py（7测试）。pytest 144 passed。
 [2026-05-19] [TASK P2-4] API 重试+兜底完成：tenacity>=8.2，_call_anthropic 用 retry_if_exception(_is_retryable)，只重试 429/5xx/connection，不重试 400/401/403。3 次重试 + 指数退避。API 最终失败时保存 UNRESOLVED 部分诊断。CLI --no-retry flag。新增 tests/test_retry.py（5测试）。pytest 148 passed。
 [2026-05-19] [TASK P2-5] MCP 鉴权+审计完成：DEBUG_MIND_MCP_TOKEN env 变量，写工具（save/delete/verify）要求 auth_token 参数匹配，读工具不需要。未设 token 时 WARNING 但保持开放。audit.jsonl 记录所有写操作（CLI + MCP），debug-mind audit CLI 子命令带 --since/--op 过滤。新增 tests/test_mcp_auth.py（10测试）。pytest 158 passed。取舍：auth_token 不能以下划线开头（FastMCP 限制），不实现 RBAC。
+[2026-05-19] [TASK P2-6] 输入消毒完成：sanitize.py 模块，description 4KB 截断，error_log 16KB（头8+尾8），env 20 key/256 char，tags 最多 20，控制字符剥离（保留 \n\t\r）。阈值从 env 可调（DEBUG_MIND_MAX_*）。Agent _run_loop 入口 + MCP save 入口各做一遍。新增 tests/test_sanitize.py（15测试）。pytest 172 passed。
 ```
 
 ---

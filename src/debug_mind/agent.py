@@ -25,6 +25,7 @@ from debug_mind.skills.codebase import search_code, read_file, list_project_stru
 from debug_mind.tools.schemas import MEMORY_TOOLS as _MEMORY_TOOLS, CODEBASE_TOOLS as _CODEBASE_TOOLS
 from debug_mind.budget import TokenBudget
 from debug_mind.observability.logger import get_logger, _try_otel_span
+from debug_mind.sanitize import sanitize_bug_input
 
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 
@@ -164,6 +165,11 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
         trace_id = uuid.uuid4().hex[:16]
         _log.info("diagnosis started", extra={"trace_id": trace_id})
         _try_otel_span(trace_id)
+
+        # Sanitize inputs before building prompt
+        bug_description, error_log, environment, _ = sanitize_bug_input(
+            description=bug_description, error_log=error_log, environment=environment,
+        )
 
         user_message = self._build_user_message(bug_description, error_log, environment)
         messages: list[dict[str, Any]] = [{"role": "user", "content": user_message}]
@@ -366,6 +372,7 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
             }, "search"
 
         elif name == "save_to_memory":
+            from debug_mind.sanitize import sanitize_tags, sanitize_error_log
             case = BugCase(
                 title=params["title"],
                 symptoms=params["symptoms"],
@@ -374,7 +381,7 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
                 fix_suggestion=params["fix_suggestion"],
                 severity=Severity(params.get("severity", "medium")),
                 status=BugStatus.ROOT_CAUSE_FOUND,
-                tags=params.get("tags", []),
+                tags=sanitize_tags(params.get("tags", [])),
                 environment=params.get("environment", {}),
                 diagnosis_steps=params.get("diagnosis_steps", []),
                 similar_case_ids=params.get("similar_case_ids", []),

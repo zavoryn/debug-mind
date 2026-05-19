@@ -182,6 +182,12 @@ def save_bug_case(
 
     memory = _get_memory()
 
+    from debug_mind.sanitize import sanitize_bug_input, sanitize_tags
+    _, _, sanitized_env, sanitized_tags = sanitize_bug_input(
+        description=title, error_log=error_log, environment=environment or {},
+        tags=tags or [],
+    )
+
     case = BugCase(
         title=title,
         symptoms=symptoms,
@@ -190,8 +196,8 @@ def save_bug_case(
         fix_suggestion=fix_suggestion,
         severity=Severity(severity),
         status=BugStatus.ROOT_CAUSE_FOUND,
-        tags=tags or [],
-        environment=environment or {},
+        tags=sanitized_tags,
+        environment=sanitized_env,
         diagnosis_steps=diagnosis_steps or [],
         similar_case_ids=similar_case_ids or [],
     )
