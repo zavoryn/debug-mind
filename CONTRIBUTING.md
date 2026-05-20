@@ -1,74 +1,88 @@
 # Contributing to DebugMind
 
-Thanks for your interest! Here's how to get started.
+> Who this is for: developers who want to fix bugs, add features, or improve documentation.
 
-## Development Setup
+## Project structure
+
+```
+debug-mind/
+├── src/debug_mind/       # Main package
+│   ├── cli.py            # Click CLI
+│   ├── agent.py          # DiagnosticAgent (ReAct loop)
+│   ├── schemas.py        # Pydantic models
+│   ├── budget.py         # Token/cost budget
+│   ├── sanitize.py       # Input sanitization
+│   ├── memory/           # MemoryStore, embeddings, reranker
+│   ├── tools/            # Anthropic tool schemas + MCP server
+│   ├── skills/           # Codebase search/read tools
+│   └── observability/    # Structured logging
+├── tests/                # pytest test suite
+├── evaluation/           # Benchmark dataset and scoring
+│   ├── cases/            # YAML benchmark cases
+│   └── seed_cases/       # Paired seed markdown files
+├── docs/                 # Architecture, development, evaluation guides
+├── scripts/              # Utility scripts (bump_version.py)
+└── .github/workflows/    # CI/CD pipelines
+```
+
+## Getting started
 
 ```bash
-# Clone and install
+# Clone and install in editable mode
 git clone https://github.com/zavoryn/debug-mind.git
 cd debug-mind
 pip install -e ".[dev]"
 
 # Run tests
-pytest
+pytest -v
 
-# Lint
-ruff check src/ tests/
+# Run evaluation (no API key needed)
+debug-mind eval --search-only
 ```
 
-## How to Contribute
+## Branch strategy
 
-### Adding a Bug Case
+- `master` — stable, all PRs target this branch
+- Feature branches — `feat/short-description` or `fix/short-description`
 
-The easiest contribution — add a real bug case to `memory/examples/`:
+## Commit messages
 
-```markdown
-# Your Bug Title
+We follow [Conventional Commits](https://www.conventionalcommits.org/):
 
-> case_id: `yourname001` | severity: **medium** | status: **fixed**
-
-## Environment
-- language: ...
-- framework: ...
-
-## Symptoms
-What happened...
-
-## Root Cause
-What was actually wrong...
-
-## Fix Suggestion
-How you fixed it...
-
-## Tags
-comma, separated, tags
+```
+feat: add new feature
+fix: fix a bug
+docs: documentation changes
+refactor: code restructuring without behavior change
+test: add or update tests
+chore: CI, tooling, build scripts
 ```
 
-### Adding a Skill
+Examples:
+```
+feat(ranking): add hit_count log-weighted ranking boost
+fix(concurrency): handle lock timeout gracefully in CLI
+```
 
-Skills live in `src/debug_mind/skills/`. Each skill is a module with functions that return dicts (compatible with Claude's tool result format).
+## Testing
 
-1. Create your skill module (e.g. `src/debug_mind/skills/database_skill.py`)
-2. Add the tool definition in `src/debug_mind/agent.py`
-3. Wire up the execution in `DiagnosticAgent._execute_tool()`
+- Every new feature must include tests
+- Run full suite before pushing: `pytest -v`
+- Run eval to verify no search regression: `debug-mind eval --search-only`
+- Coverage must not decrease
 
-### Reporting Issues
+## Code style
 
-Use the issue templates — bug reports and feature requests are both welcome.
+- Ruff handles formatting and linting — `ruff format src/ tests/ && ruff check src/ tests/`
+- No unnecessary comments — code should be self-documenting
+- Docstrings only for "why", not "what"
+- Identifiers in English
 
-## Code Style
+## Further reading
 
-- Follow PEP 8 (enforced by ruff)
-- Use type hints on all function signatures
-- Keep functions focused — one responsibility each
-- No comments that say what the code does; comments are for WHY
-
-## Pull Request Process
-
-1. Fork the repo
-2. Create a feature branch
-3. Make your changes
-4. Ensure tests pass (`pytest`)
-5. Ensure lint passes (`ruff check`)
-6. Open a PR with a clear description
+- [REFACTOR_PLAN.md](REFACTOR_PLAN.md) — Phase 1 design (schema, memory, evaluation)
+- [PHASE_2_PLAN.md](PHASE_2_PLAN.md) — Phase 2 design (production hardening)
+- [PHASE_3_PLAN.md](PHASE_3_PLAN.md) — Phase 3 design (open-source engineering)
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — Architecture overview
+- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — How to extend DebugMind
+- [docs/EVALUATION.md](docs/EVALUATION.md) — Evaluation framework details

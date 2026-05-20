@@ -1,0 +1,25 @@
+name: Question
+description: Ask a question about using or extending DebugMind
+labels: [question]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Questions are welcome! Check the [docs](docs/) first — your answer might already be there.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Installation / setup
+        - CLI usage
+        - MCP server
+        - Memory / search behavior
+        - Extending / contributing
+        - Other
