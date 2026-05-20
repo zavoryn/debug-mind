@@ -48,7 +48,10 @@ else:
 def _get_memory() -> MemoryStore:
     global _memory
     if _memory is None:
-        _memory = MemoryStore()
+        # Read env var at call time — NOT module-level DEFAULT_MEMORY_DIR,
+        # which is frozen at import time and immune to monkeypatch.setenv.
+        memory_dir = os.environ.get("DEBUG_MIND_MEMORY_DIR", "memory")
+        _memory = MemoryStore(memory_dir=memory_dir)
     return _memory
 
 

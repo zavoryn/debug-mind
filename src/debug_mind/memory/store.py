@@ -70,6 +70,20 @@ class MemoryStore:
 
     def save(self, case: BugCase) -> BugCase:
         """Persist a bug case. Deduplicates against verified existing cases."""
+        # Defense-in-depth: sanitize all text inputs at the store level
+        # so even callers that skip sanitization are protected.
+        from debug_mind.sanitize import (
+            sanitize_description, sanitize_error_log,
+            sanitize_environment, sanitize_tags,
+        )
+        case.title = sanitize_description(case.title)
+        case.symptoms = sanitize_description(case.symptoms)
+        case.root_cause = sanitize_description(case.root_cause)
+        case.fix_suggestion = sanitize_description(case.fix_suggestion)
+        case.error_log = sanitize_error_log(case.error_log)
+        case.environment = sanitize_environment(case.environment)
+        case.tags = sanitize_tags(case.tags)
+
         try:
             with self._lock:
                 case.updated_at = datetime.now(timezone.utc)

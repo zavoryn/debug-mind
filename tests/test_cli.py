@@ -17,7 +17,7 @@ def runner():
 @pytest.fixture
 def memory_dir(tmp_path, monkeypatch):
     d = tmp_path / "test_memory"
-    monkeypatch.setattr("debug_mind.cli.DEFAULT_MEMORY_DIR", d)
+    monkeypatch.setenv("DEBUG_MIND_MEMORY_DIR", str(d))
     return d
 
 

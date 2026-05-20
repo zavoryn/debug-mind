@@ -58,11 +58,11 @@ load_dotenv()
 
 console = Console()
 
-DEFAULT_MEMORY_DIR = Path(os.environ.get("DEBUG_MIND_MEMORY_DIR", "memory"))
-
-
 def _get_memory() -> MemoryStore:
-    return MemoryStore(memory_dir=DEFAULT_MEMORY_DIR)
+    # Read env var at call time — NOT module-level constant,
+    # which is frozen at import time and immune to monkeypatch.setenv.
+    memory_dir = os.environ.get("DEBUG_MIND_MEMORY_DIR", "memory")
+    return MemoryStore(memory_dir=memory_dir)
 
 
 @click.group()

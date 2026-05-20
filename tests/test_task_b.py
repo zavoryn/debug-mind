@@ -204,7 +204,7 @@ class TestVerifyCLI:
     def test_verify_correct_cli(self, tmp_path, monkeypatch):
         memory_dir = tmp_path / "verify_memory"
         memory_dir.mkdir()
-        monkeypatch.setattr("debug_mind.cli.DEFAULT_MEMORY_DIR", memory_dir)
+        monkeypatch.setenv("DEBUG_MIND_MEMORY_DIR", str(memory_dir))
         store = MemoryStore(memory_dir=memory_dir)
 
         case = _make_case(id="cli-verify-test")
@@ -218,7 +218,7 @@ class TestVerifyCLI:
     def test_verify_wrong_cli(self, tmp_path, monkeypatch):
         memory_dir = tmp_path / "wrong_memory"
         memory_dir.mkdir()
-        monkeypatch.setattr("debug_mind.cli.DEFAULT_MEMORY_DIR", memory_dir)
+        monkeypatch.setenv("DEBUG_MIND_MEMORY_DIR", str(memory_dir))
         store = MemoryStore(memory_dir=memory_dir)
 
         case = _make_case(id="cli-wrong-test")

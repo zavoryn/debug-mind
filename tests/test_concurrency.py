@@ -1,6 +1,12 @@
 """Concurrency safety tests — verify filelock protects parallel writes.
 
 P2-1: Multiple processes can save concurrently without corruption.
+
+Note: ChromaDB PersistentClient uses SQLite, which does NOT support
+multi-process concurrent writes. The filelock protects Markdown files,
+but workers may still fail on ChromaDB init. We retry to work around this.
+For true multi-process scenarios, use ChromaDB server mode or a different
+vector backend.
 """
 
 from __future__ import annotations
@@ -17,8 +23,24 @@ from debug_mind.schemas import BugCase
 
 
 def _worker_save(tmp_dir: str, idx: int) -> str:
-    """Worker that saves a case and returns its ID."""
-    store = MemoryStore(memory_dir=tmp_dir)
+    """Worker that saves a case and returns its ID.
+
+    Retries MemoryStore init because ChromaDB PersistentClient uses SQLite
+    which doesn't support multi-process concurrent access — the init may fail
+    if another process holds the SQLite lock.
+    """
+    import time
+
+    store = None
+    for attempt in range(5):
+        try:
+            store = MemoryStore(memory_dir=tmp_dir)
+            break
+        except Exception:
+            time.sleep(0.3 * (attempt + 1))
+    if store is None:
+        raise RuntimeError(f"Worker {idx}: MemoryStore init failed after 5 retries")
+
     case = BugCase(title=f"concurrent-{idx}", symptoms=f"symptom-{idx}")
     store.save(case)
     return case.id
