@@ -1,0 +1,29 @@
+id: ruby-nplus1
+bug_description: "Rails Active Record N+1: loading user.orders in a loop without includes produces 500+ queries on order history page"
+error_log: |
+  ActiveRecord::StatementInvalid: PG::ConnectionBad: PQconsumeInput() could not receive data from server: Connection timed out (ActiveRecord::ConnectionTimeoutError)
+  --- Bullet gem warning ---
+  USE eager loading detected
+    Order => [:items]
+    Add to your query: .includes([:items])
+  --- Query count: 537 (threshold: 50) ---
+environment:
+  language: Ruby
+  framework: Rails 7.1 / ActiveRecord
+  runtime: Ruby 3.3
+  database: PostgreSQL 15
+source: null
+synthetic: true
+language: ruby
+category: performance
+expected_root_cause_keywords:
+  - n+1
+  - includes
+  - eager load
+  - activerecord
+  - bullet
+expected_fix_keywords:
+  - includes
+  - eager_load
+  - preload
+  - joins

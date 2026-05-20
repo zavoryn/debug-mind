@@ -51,13 +51,16 @@ category: npe         # error category
 3. Run eval to verify: `debug-mind eval --search-only`
 4. Update the "Baseline scores" table below.
 
-## Baseline scores (12 synthetic cases)
+## Baseline scores (50 cases: 12 synthetic with seeds, 38 synthetic without seeds)
 
-| Metric | Score |
-|--------|-------|
-| hit@1 | 0.92 |
-| hit@3 | 0.96 |
-| MRR | 0.96 |
+| Metric | 12-case (Phase 1) | 50-case (Phase 3) |
+|--------|-------------------|-------------------|
+| hit@1 | 0.92 | 0.22 |
+| hit@3 | 0.96 | 0.24 |
+| MRR | 0.96 | 0.23 |
+| KW Recall | — | 0.22 |
+
+Note: the drop is expected because 38 new cases lack paired seed files. Scores will improve as seed cases are added.
 
 ## Running evaluation
 

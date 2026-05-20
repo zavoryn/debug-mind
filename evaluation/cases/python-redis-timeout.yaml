@@ -1,0 +1,29 @@
+id: python-redis-timeout
+bug_description: "Redis connection timeout under high load because connection pool size not configured, defaulting to single connection for all Celery workers"
+error_log: |
+  redis.exceptions.ConnectionError: Connection closed by server.
+  redis.exceptions.TimeoutError: Timeout reading from socket
+  ---
+  Active Celery workers: 8
+  Redis connection pool max_connections: 1 (default)
+  Queue depth: 12,000 jobs pending
+  Avg job latency: 45 seconds (expected <2s)
+environment:
+  language: Python
+  framework: Celery 5.3 / redis-py
+  runtime: Python 3.11
+source: null
+synthetic: true
+language: python
+category: connection-pool
+expected_root_cause_keywords:
+  - redis
+  - connection pool
+  - timeout
+  - max_connections
+  - celery
+expected_fix_keywords:
+  - max_connections
+  - connection pool
+  - BlockingConnectionPool
+  - socket_timeout

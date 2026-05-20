@@ -1,0 +1,32 @@
+id: python-threading-deadlock
+bug_description: "Python threading deadlock: thread A holds lock1 waiting for lock2, thread B holds lock2 waiting for lock1"
+error_log: |
+  Traceback (most recent call last):
+  KeyboardInterrupt
+  -- Thread dump --
+  Thread-1 (MainThread): waiting for <Lock lock2> (held by Thread-2), holding <Lock lock1>
+    File "/app/cache.py", line 67, in update_cache
+      with lock2:
+  Thread-2 (Worker-1): waiting for <Lock lock1> (held by Thread-1), holding <Lock lock2>
+    File "/app/cache.py", line 42, in evict_oldest
+      with lock1:
+  -- Process hung for 300s --
+environment:
+  language: Python
+  framework: threading / custom cache
+  runtime: Python 3.11
+source: null
+synthetic: true
+language: python
+category: deadlock
+expected_root_cause_keywords:
+  - deadlock
+  - lock ordering
+  - threading
+  - acquire
+  - timeout
+expected_fix_keywords:
+  - lock order
+  - RLock
+  - acquire timeout
+  - context manager

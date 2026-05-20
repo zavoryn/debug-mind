@@ -1,0 +1,25 @@
+id: go-json-unmarshal
+bug_description: "json.Unmarshal into Go struct with int field silently fails when API response returns string 'N/A' for numeric field"
+error_log: |
+  --- API response: {"user_id": 1234, "score": "N/A", "rank": "premium"} ---
+  --- After unmarshal: Score field is 0 (zero value), no error returned ---
+  --- Downstream calculation: all users with Score=0 were excluded from leaderboard ---
+environment:
+  language: Go
+  framework: encoding/json
+  runtime: Go 1.22
+source: null
+synthetic: true
+language: go
+category: serialization
+expected_root_cause_keywords:
+  - json
+  - unmarshal
+  - type coercion
+  - silent failure
+  - zero value
+expected_fix_keywords:
+  - json.Number
+  - custom UnmarshalJSON
+  - interface
+  - strict mode

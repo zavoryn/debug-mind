@@ -1,0 +1,28 @@
+id: node-json-parse
+bug_description: "JSON.parse on unvalidated request body from malformed client crashes API server with uncaught SyntaxError"
+error_log: |
+  SyntaxError: Unexpected token '}' in JSON at position 2048
+      at JSON.parse (<anonymous>)
+      at parse (/app/node_modules/body-parser/lib/types/json.js:89:19)
+      at /app/node_modules/body-parser/lib/read.js:128:18
+      at AsyncResource.runInAsyncScope (node:async_hooks:206:9)
+  -- Raw body (truncated): {"name":"Test Product","price":99.99,"metadata":{"tags":["a","b"]}}} --
+environment:
+  language: JavaScript
+  framework: Express 4.18 / body-parser
+  runtime: Node.js 20
+source: null
+synthetic: true
+language: javascript
+category: serialization
+expected_root_cause_keywords:
+  - json.parse
+  - syntaxerror
+  - body-parser
+  - malformed
+  - validation
+expected_fix_keywords:
+  - try-catch
+  - json schema
+  - zod
+  - error middleware

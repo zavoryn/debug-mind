@@ -1,0 +1,27 @@
+id: python-pytz-naive
+bug_description: "Naive datetime compared with timezone-aware datetime causes 1-hour offset in billing calculation during DST transition"
+error_log: |
+  Traceback (most recent call last):
+    File "/app/billing.py", line 89, in calculate_usage
+      duration = (end_time - start_time).total_seconds() / 3600
+  TypeError: can't subtract offset-naive and offset-aware datetimes
+  --- Context: end_time from DB is UTC-aware, start_time from config is naive ---
+environment:
+  language: Python
+  framework: pytz / SQLAlchemy
+  runtime: Python 3.11
+source: null
+synthetic: true
+language: python
+category: timezone
+expected_root_cause_keywords:
+  - timezone
+  - naive
+  - aware
+  - utc
+  - dst
+expected_fix_keywords:
+  - pytz.utc
+  - timezone.utc
+  - localize
+  - isoformat

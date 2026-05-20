@@ -1,0 +1,28 @@
+id: python-pydantic-serialize
+bug_description: "Pydantic model with UUID field fails to serialize when UUID is passed as string from API request"
+error_log: |
+  pydantic.error_wrappers.ValidationError: 1 validation error for OrderCreate
+  order_id
+    value is not a valid uuid (type=type_error.uuid)
+  ---
+  Input: {"order_id": "ORD-2024-0315", "amount": 199.99, "currency": "USD"}
+  Expected UUID format but received business order ID string
+environment:
+  language: Python
+  framework: Pydantic v2 / FastAPI
+  runtime: Python 3.12
+source: null
+synthetic: true
+language: python
+category: serialization
+expected_root_cause_keywords:
+  - pydantic
+  - validation
+  - uuid
+  - serialization
+  - type coercion
+expected_fix_keywords:
+  - field_validator
+  - custom type
+  - model_validator
+  - str

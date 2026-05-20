@@ -1,0 +1,29 @@
+id: typescript-strict-null
+bug_description: "TypeScript strictNullChecks disabled, allowing null to flow through optional chaining into payment calculation, producing NaN invoice total"
+error_log: |
+  TypeError: Cannot read properties of null (reading 'multiply')
+      at InvoiceCalculator.calculateTotal (/app/dist/services/billing.js:89:39)
+      at InvoiceController.generate (/app/dist/controllers/invoice.js:34:21)
+  ---
+  Input: order.discount = null, order.subtotal = 199.99
+  Calculation: 199.99 * null = NaN
+  Generated invoice amount: NaN USD
+environment:
+  language: TypeScript
+  framework: NestJS / class-validator
+  runtime: Node.js 20
+source: null
+synthetic: true
+language: typescript
+category: npe
+expected_root_cause_keywords:
+  - strictnullchecks
+  - "null"
+  - optional
+  - "nan"
+  - typescript
+expected_fix_keywords:
+  - strictNullChecks
+  - optional chaining
+  - nullish coalescing
+  - validation

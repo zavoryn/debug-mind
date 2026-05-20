@@ -1,0 +1,29 @@
+id: python-django-nplus1
+bug_description: "Django ORM executing 1000+ queries for a list page due to N+1 query pattern on related objects"
+error_log: |
+  django.db.utils.DatabaseError: too many client connections (max 100)
+  -- SQL log excerpt --
+  SELECT * FROM "blog_post" LIMIT 50;  -- 1 query
+  SELECT * FROM "blog_author" WHERE id = 1;  -- 50 queries, one per post
+  SELECT * FROM "blog_author" WHERE id = 2;
+  ... (truncated 948 more queries)
+environment:
+  language: Python
+  framework: Django 4.2
+  runtime: Python 3.11
+  database: PostgreSQL 15
+source: null
+synthetic: true
+language: python
+category: performance
+expected_root_cause_keywords:
+  - n+1
+  - select_related
+  - prefetch_related
+  - eager loading
+  - queryset optimization
+expected_fix_keywords:
+  - select_related
+  - prefetch_related
+  - join
+  - annotate

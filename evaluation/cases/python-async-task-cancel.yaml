@@ -1,0 +1,32 @@
+id: python-async-task-cancel
+bug_description: "Asyncio task cancelled but coroutine cleanup never runs, leaking file descriptors and connections"
+error_log: |
+  Traceback (most recent call last):
+    File "/app/worker.py", line 87, in process_batch
+      result = await asyncio.gather(*tasks, return_exceptions=True)
+  asyncio.exceptions.CancelledError
+    During handling of the above exception:
+    File "/app/worker.py", line 92, in process_batch
+      await cleanup_resources(tasks)
+    File "/app/worker.py", line 45, in cleanup_resources
+      await conn.close()
+  RuntimeError: Event loop is closed
+environment:
+  language: Python
+  framework: asyncio / FastAPI
+  runtime: Python 3.11
+source: null
+synthetic: true
+language: python
+category: async
+expected_root_cause_keywords:
+  - asyncio
+  - cancel
+  - event loop
+  - cleanup
+  - resource leak
+expected_fix_keywords:
+  - shield
+  - try-finally
+  - graceful shutdown
+  - signal handler

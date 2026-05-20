@@ -1,0 +1,28 @@
+id: node-prototype-pollution
+bug_description: "Prototype pollution via lodash.merge on unvalidated user input extends Object.prototype, causing all objects to have unexpected isAdmin property"
+error_log: |
+  -- Security finding: prototype pollution --
+  Object.prototype.isAdmin = true
+      at Function.merge (/app/node_modules/lodash/merge.js:42:17)
+      at updateUser (/app/services/userService.js:67:15)
+  -- Request body: {"__proto__": {"isAdmin": true}} --
+  -- All users in system now get isAdmin=true from prototype chain --
+environment:
+  language: JavaScript
+  framework: Express 4.18 / lodash 4.17
+  runtime: Node.js 20
+source: null
+synthetic: true
+language: javascript
+category: security
+expected_root_cause_keywords:
+  - prototype pollution
+  - __proto__
+  - lodash
+  - merge
+  - object
+expected_fix_keywords:
+  - hasOwnProperty
+  - Object.create(null)
+  - map
+  - sanitize

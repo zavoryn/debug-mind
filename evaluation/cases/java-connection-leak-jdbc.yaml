@@ -1,0 +1,29 @@
+id: java-connection-leak-jdbc
+bug_description: "JDBC Connection not closed in finally block after SQLException, leaking connections from HikariCP pool until maxPoolSize exhausted"
+error_log: |
+  com.zaxxer.hikari.pool.PoolBase: HikariPool-1 - Connection is not available, request timed out after 30000ms.
+  ---
+  java.sql.SQLException: Connection is closed
+      at com.zaxxer.hikari.pool.HikariProxyConnection$ClosedConnection.lambda$static$0(HikariProxyConnection.java:62)
+      at com.example.repository.OrderRepository.findPending(OrderRepository.java:47)
+  --- HikariCP pool stats: active=20, idle=0, pending=35, max=20 ---
+environment:
+  language: Java
+  framework: Spring Boot 3.2 / HikariCP / JDBC
+  runtime: JDK 21
+  database: PostgreSQL 15
+source: null
+synthetic: true
+language: java
+category: connection-pool
+expected_root_cause_keywords:
+  - connection
+  - leak
+  - jdbc
+  - hikaricp
+  - close
+expected_fix_keywords:
+  - try-with-resources
+  - finally
+  - close
+  - connection pool

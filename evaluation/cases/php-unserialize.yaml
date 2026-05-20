@@ -1,0 +1,29 @@
+id: php-unserialize
+bug_description: "PHP unserialize() on user-controlled cookie data allows object injection, enabling remote code execution via magic __wakeup gadget chain"
+error_log: |
+  PHP Fatal error:  Uncaught Exception: Unable to unserialize cookie value
+  in /var/www/app/Http/Middleware/SessionMiddleware.php:34
+  Stack trace:
+  #0 /var/www/app/Http/Kernel.php(56): App\Http\Middleware\SessionMiddleware->handle()
+  --
+  Cookie raw value: O:8:"UserMenu":1:{s:4:"file";s:24:"/etc/passwd";}
+  Magic method __wakeup() called on deserialized UserMenu object
+environment:
+  language: PHP
+  framework: Laravel 11
+  runtime: PHP 8.3
+source: null
+synthetic: true
+language: php
+category: security
+expected_root_cause_keywords:
+  - unserialize
+  - object injection
+  - wakeup
+  - deserialization
+  - cookie
+expected_fix_keywords:
+  - json_encode
+  - json_decode
+  - allowed_classes
+  - hash_hmac

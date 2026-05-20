@@ -1,0 +1,34 @@
+id: go-channel-deadlock
+bug_description: "Channel deadlock: unbuffered channel send without corresponding receive because goroutine exited early on error"
+error_log: |
+  fatal error: all goroutines are asleep - deadlock!
+
+  goroutine 1 [chan send]:
+  main.processBatch(0xc0001a2000)
+      /app/worker/batch.go:67 +0x345
+  main.main()
+      /app/main.go:34 +0x1a2
+
+  goroutine 19 [sleep]:
+  time.Sleep(0x12a05f200)
+      /usr/local/go/src/runtime/time.go:195 +0x135
+  -- goroutine 19 exited early without receiving from ch --
+environment:
+  language: Go
+  framework: goroutines / channels
+  runtime: Go 1.22
+source: null
+synthetic: true
+language: go
+category: deadlock
+expected_root_cause_keywords:
+  - deadlock
+  - channel
+  - goroutine
+  - send
+  - receive
+expected_fix_keywords:
+  - buffered channel
+  - select
+  - context
+  - defer close

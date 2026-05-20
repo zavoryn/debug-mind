@@ -1,0 +1,30 @@
+id: python-asgi-event-loop
+bug_description: "Synchronous database call inside async FastAPI handler blocks event loop, causing request timeouts under load"
+error_log: |
+  ERROR:    Exception in ASGI application
+  Traceback (most recent call last):
+    File "/app/main.py", line 34, in get_report
+      data = db.execute("SELECT * FROM reports WHERE id = ?", [report_id]).fetchone()
+  RuntimeError: This operation would block the event loop; use run_sync or a thread pool executor
+  ---
+  WARNING:  ASGI callable returned without sending handshake. Connection closed.
+  asyncio.exceptions.TimeoutError: Request timed out after 30s
+environment:
+  language: Python
+  framework: FastAPI / SQLAlchemy
+  runtime: Python 3.12
+source: null
+synthetic: true
+language: python
+category: async
+expected_root_cause_keywords:
+  - event loop
+  - synchronous
+  - async def
+  - blocking
+  - run_sync
+expected_fix_keywords:
+  - run_sync
+  - thread pool
+  - async session
+  - asyncpg

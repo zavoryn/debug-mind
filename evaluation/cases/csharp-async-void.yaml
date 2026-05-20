@@ -1,0 +1,28 @@
+id: csharp-async-void
+bug_description: "async void event handler in ASP.NET Core throws unobserved exception, crashing the process because exception can't be caught by middleware"
+error_log: |
+  Unhandled exception. System.InvalidOperationException: Sequence contains no elements
+     at System.Linq.ThrowHelper.ThrowNoElementsException()
+     at System.Linq.Enumerable.First[TSource](IEnumerable`1 source)
+     at OrderService.BackgroundRefresh(Object sender, EventArgs e) in /app/Services/OrderService.cs:line 73
+     at System.Threading.Tasks.Task.<>c.<ThrowAsync>b__128_0(Object state)
+  -- Note: async void method, exception not caught by try-catch in caller --
+environment:
+  language: C#
+  framework: ASP.NET Core 8
+  runtime: .NET 8
+source: null
+synthetic: true
+language: csharp
+category: async
+expected_root_cause_keywords:
+  - async void
+  - unhandled
+  - exception
+  - event handler
+  - task
+expected_fix_keywords:
+  - async Task
+  - try-catch
+  - ContinueWith
+  - TaskScheduler.UnobservedTaskException

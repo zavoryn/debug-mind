@@ -1,0 +1,29 @@
+id: kotlin-coroutine-scope
+bug_description: "Kotlin GlobalScope.launch used instead of viewModelScope in Android app, causing coroutine to continue after Activity destroyed and updating stale UI"
+error_log: |
+  E/AndroidRuntime: FATAL EXCEPTION: DefaultDispatcher-worker-1
+      Process: com.example.app, PID: 48291
+      kotlin.UninitializedPropertyAccessException: lateinit property binding has not been initialized
+          at com.example.app.ui.OrderDetailFragment.updateTotals(OrderDetailFragment.kt:89)
+          at com.example.app.ui.OrderDetailFragment.access$updateTotals(OrderDetailFragment.kt:18)
+          at com.example.app.ui.OrderDetailFragment$onViewCreated$1.invokeSuspend(OrderDetailFragment.kt:56)
+  -- Fragment destroyed but coroutine still running in GlobalScope --
+environment:
+  language: Kotlin
+  framework: Android / Jetpack Compose
+  runtime: Android 14
+source: null
+synthetic: true
+language: kotlin
+category: async
+expected_root_cause_keywords:
+  - globalscope
+  - coroutine
+  - lifecycle
+  - destroyed
+  - leak
+expected_fix_keywords:
+  - viewModelScope
+  - lifecycleScope
+  - coroutineScope
+  - structured concurrency

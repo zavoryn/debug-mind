@@ -1,0 +1,27 @@
+id: python-multiprocess-oom
+bug_description: "Multiprocessing Pool.map with large dataset causes OOM because each worker loads full copy of shared data"
+error_log: |
+  MemoryError: Unable to allocate 2.0 GiB for array with shape (10000000, 25)
+  Worker pid 48291 exited with code 137 (SIGKILL)
+  Worker pid 48292 exited with code 137 (SIGKILL)
+  -- System: 8 GB RAM, 10M-row DataFrame, 4 worker processes --
+environment:
+  language: Python
+  framework: multiprocessing / pandas
+  runtime: Python 3.11
+source: null
+synthetic: true
+language: python
+category: oom
+expected_root_cause_keywords:
+  - multiprocessing
+  - memory
+  - oom
+  - shared memory
+  - fork
+expected_fix_keywords:
+  - shared_memory
+  - chunksize
+  - imap
+  - generator
+  - spawn

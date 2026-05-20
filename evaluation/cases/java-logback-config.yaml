@@ -1,0 +1,28 @@
+id: java-logback-config
+bug_description: "Logback XML misconfiguration: FileAppender pointing to read-only filesystem directory, all logging silently fails and production has 0 application logs"
+error_log: |
+  -- No application logs available for incident window 2024-03-15 10:00-11:00 UTC --
+  -- System.out contains: --
+  logback ERROR: Failed to create parent directories for [/readonly-volume/logs/app.log]
+  logback WARN: No such appender named [FILE] in context [default]
+  -- Application ran for 6 months without file logs, only stdout --
+environment:
+  language: Java
+  framework: Logback 1.4 / Spring Boot 3.2
+  runtime: JDK 21
+source: null
+synthetic: true
+language: java
+category: config
+expected_root_cause_keywords:
+  - logback
+  - appender
+  - configuration
+  - permission
+  - silent failure
+expected_fix_keywords:
+  - configuration
+  - appender
+  - fallback
+  - stdout
+  - log level

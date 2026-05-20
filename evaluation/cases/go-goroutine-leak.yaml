@@ -1,0 +1,28 @@
+id: go-goroutine-leak
+bug_description: "Goroutine leak: HTTP client without context timeout spawns goroutines that block forever on slow third-party API, consuming 2GB memory"
+error_log: |
+  --- pprof goroutine dump ---
+  goroutine profile: total 48231
+  45000 @ 0x43a2e5 0x4f8a12 0x4f89c3 0x5b2f41 0x5c1a8e 0x5c18e5
+  #  0x5b2f40  net/http.(*persistConn).roundTrip+0x...
+  #  0x5c1a8d  net/http.(*Transport).roundTrip+0x...
+  -- 45000 goroutines blocked on http.Client.Do without context timeout --
+environment:
+  language: Go
+  framework: net/http
+  runtime: Go 1.22
+source: null
+synthetic: true
+language: go
+category: memory-leak
+expected_root_cause_keywords:
+  - goroutine
+  - leak
+  - context
+  - timeout
+  - http.Client
+expected_fix_keywords:
+  - context.WithTimeout
+  - context.WithCancel
+  - http.Client.Timeout
+  - defer

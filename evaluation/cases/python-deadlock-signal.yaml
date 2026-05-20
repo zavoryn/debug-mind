@@ -1,0 +1,33 @@
+id: python-deadlock-signal
+bug_description: "Deadlock between signal handler and main thread: signal handler acquires lock already held by interrupted thread on the same stack"
+error_log: |
+  Traceback (most recent call last):
+  KeyboardInterrupt
+  -- Process hung after SIGTERM, not responding to SIGKILL from orchestrator --
+  Thread 0x00007f8a3c001700 (LWP 48291):
+      waiting for <lock at 0x7f8a3c40a200>
+      File "/app/worker.py", line 89, in graceful_shutdown
+          with state.lock:
+  Thread 0x00007f8a3c001700 already holds <lock at 0x7f8a3c40a200>
+      File "/app/worker.py", line 56, in process_item
+          with state.lock:
+  -- Signal handler invoked during process_item, tried to acquire same lock --
+environment:
+  language: Python
+  framework: signal / threading
+  runtime: Python 3.12
+source: null
+synthetic: true
+language: python
+category: deadlock
+expected_root_cause_keywords:
+  - signal
+  - deadlock
+  - reentrant
+  - lock
+  - sigterm
+expected_fix_keywords:
+  - RLock
+  - signal.set_wakeup_fd
+  - threading.Event
+  - flag

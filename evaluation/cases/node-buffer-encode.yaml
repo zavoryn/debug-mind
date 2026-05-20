@@ -1,0 +1,25 @@
+id: node-buffer-encode
+bug_description: "Buffer.toString('ascii') on UTF-8 webhook payload from Chinese partner API silently corrupts multi-byte characters"
+error_log: |
+  -- Before Buffer conversion: {"customer_name":"张三丰","items":["茶叶","丝绸"]} --
+  -- After Buffer.toString('ascii'): {"customer_name":"??? ?","items":["??","??"]} --
+  -- Database now contains corrupted names, downstream ETL produces garbled reports --
+environment:
+  language: JavaScript
+  framework: Express / axios
+  runtime: Node.js 20
+source: null
+synthetic: true
+language: javascript
+category: encoding
+expected_root_cause_keywords:
+  - buffer
+  - encoding
+  - ascii
+  - utf-8
+  - multibyte
+expected_fix_keywords:
+  - toString('utf-8')
+  - encoding
+  - charset
+  - content-type

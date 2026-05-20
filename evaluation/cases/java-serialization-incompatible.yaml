@@ -1,0 +1,30 @@
+id: java-serialization-incompatible
+bug_description: "Java deserialization fails with serialVersionUID mismatch after adding field to DTO shared between microservices via Kafka"
+error_log: |
+  java.io.InvalidClassException: com.example.shared.OrderEvent; local class incompatible:
+  stream classdesc serialVersionUID = -5237182347128947123,
+  local class serialVersionUID = 8912734128937489127
+      at java.io.ObjectStreamClass.initNonProxy(ObjectStreamClass.java:689)
+      at java.io.ObjectInputStream.readNonProxyDesc(ObjectInputStream.java:2012)
+      at java.io.ObjectInputStream.readClassDesc(ObjectInputStream.java:1862)
+      at org.apache.kafka.common.serialization.Deserializer.deserialize(Deserializer.java:58)
+  -- Producer service (v1.2) and Consumer service (v1.0) have different OrderEvent versions --
+environment:
+  language: Java
+  framework: Kafka / Spring Boot 3.2
+  runtime: JDK 21
+source: null
+synthetic: true
+language: java
+category: serialization
+expected_root_cause_keywords:
+  - serialversionuid
+  - deserialization
+  - incompatible
+  - schema evolution
+  - kafka
+expected_fix_keywords:
+  - serialVersionUID
+  - avro
+  - protobuf
+  - schema registry

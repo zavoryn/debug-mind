@@ -1,0 +1,28 @@
+id: node-nextjs-ssr-timeout
+bug_description: "Next.js SSR page hangs indefinitely when getServerSideProps awaits external API without timeout, blocking all serverless function instances"
+error_log: |
+  Error [TimeoutError]: Task timed out after 10.01 seconds
+      at Timeout._onTimeout (/var/task/.next/server/pages/orders.js:125:13)
+  ---
+  Nov 15 10:32:01  getServerSideProps: awaiting paymentService.getHistory() ...
+  Nov 15 10:32:11  Task timed out (10s Vercel function limit)
+  --- Vercel 500: FUNCTION_INVOCATION_TIMEOUT ---
+environment:
+  language: JavaScript
+  framework: Next.js 14 / Vercel
+  runtime: Node.js 20
+source: null
+synthetic: true
+language: javascript
+category: async
+expected_root_cause_keywords:
+  - ssr
+  - timeout
+  - getserversideprops
+  - serverless
+  - abort
+expected_fix_keywords:
+  - AbortController
+  - timeout
+  - Promise.race
+  - ISR

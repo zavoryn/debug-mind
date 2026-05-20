@@ -1,0 +1,31 @@
+id: rust-borrow-checker
+bug_description: "Rust mutable borrow conflict: holding mutable reference to HashMap while iterating and inserting, causing borrow checker error at scale"
+error_log: |
+  error[E0502]: cannot borrow `cache` as mutable because it is also borrowed as immutable
+    --> src/cache.rs:42:17
+     |
+  41 |         for (key, val) in cache.iter() {
+     |                           ------------ immutable borrow occurs here
+  42 |             cache.insert(new_key, new_val);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ mutable borrow occurs here
+  43 |         }
+     |         - immutable borrow later used here
+environment:
+  language: Rust
+  framework: std::collections / tokio
+  runtime: Rust 1.77
+source: null
+synthetic: true
+language: rust
+category: ownership
+expected_root_cause_keywords:
+  - borrow checker
+  - mutable
+  - immutable
+  - ownership
+  - iterator
+expected_fix_keywords:
+  - clone
+  - entry
+  - split_at_mut
+  - collect

@@ -1,0 +1,27 @@
+id: python-unicode-encode
+bug_description: "UnicodeEncodeError when writing non-ASCII user data to CSV file, platform encoding defaults to ascii"
+error_log: |
+  Traceback (most recent call last):
+    File "/app/export.py", line 56, in export_users_csv
+      writer.writerow([user.name, user.email, user.department])
+  UnicodeEncodeError: 'ascii' codec can't encode character '中' in position 3: ordinal not in range(128)
+  -- user.name value: "中国团队-张三"
+environment:
+  language: Python
+  framework: csv module / FastAPI
+  runtime: Python 3.10
+source: null
+synthetic: true
+language: python
+category: encoding
+expected_root_cause_keywords:
+  - unicodeencodeerror
+  - ascii
+  - encoding
+  - utf-8
+  - locale
+expected_fix_keywords:
+  - encoding=utf-8
+  - open
+  - codecs
+  - locale

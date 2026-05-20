@@ -1,0 +1,28 @@
+id: node-promise-unhandled
+bug_description: "Unhandled Promise rejection in Express middleware crashes Node process with unhandledRejection when Redis is unreachable"
+error_log: |
+  UnhandledPromiseRejectionWarning: Error: getaddrinfo ENOTFOUND redis-cluster.internal
+      at GetAddrInfoReqWrap.onlookup [as oncomplete] (node:dns:109:26)
+  (node:48291) UnhandledPromiseRejectionWarning: This error originated either by throwing
+  inside an async function without a catch block, or by rejecting a promise.
+  (node:48291) [DEP0018] DeprecationWarning: Unhandled promise rejections are deprecated.
+  In the future, promise rejections that are not handled will terminate the Node.js process.
+environment:
+  language: JavaScript
+  framework: Express 4.18 / ioredis
+  runtime: Node.js 20
+source: null
+synthetic: true
+language: javascript
+category: async
+expected_root_cause_keywords:
+  - unhandled rejection
+  - promise
+  - async
+  - catch
+  - redis
+expected_fix_keywords:
+  - try-catch
+  - .catch
+  - error handler
+  - retry

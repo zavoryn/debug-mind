@@ -1,0 +1,30 @@
+id: python-sqlalchemy-session-leak
+bug_description: "SQLAlchemy session not closed after exception in middleware, leaking database connections until pool exhausted"
+error_log: |
+  sqlalchemy.exc.TimeoutError: QueuePool limit of size 20 overflow 10 reached, connection timed out, timeout 30.00
+  ---
+  File "/app/db/session.py", line 23, in get_db
+    db = SessionLocal()
+  File "/app/middleware/auth.py", line 15, in authenticate
+    user = db.query(User).filter(User.token == token).first()
+  sqlalchemy.exc.OperationalError: server closed the connection unexpectedly
+environment:
+  language: Python
+  framework: SQLAlchemy 2.0 / FastAPI
+  runtime: Python 3.12
+  database: PostgreSQL 15
+source: null
+synthetic: true
+language: python
+category: connection-pool
+expected_root_cause_keywords:
+  - session
+  - connection pool
+  - close
+  - leak
+  - middleware
+expected_fix_keywords:
+  - session.close
+  - try-finally
+  - context manager
+  - dependency injection

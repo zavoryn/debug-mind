@@ -1,0 +1,29 @@
+id: python-celery-race
+bug_description: "Celery tasks processing same record concurrently due to missing database row lock, causing double-processing and data corruption"
+error_log: |
+  [2024-03-15 10:32:01] ERROR celery.worker: Task payment.process[abc123] failed: IntegrityError
+  psycopg2.errors.UniqueViolation: duplicate key value violates unique constraint "payment_order_id_key"
+  DETAIL: Key (order_id)=(ORD-8821) already exists.
+  [2024-03-15 10:32:01] ERROR celery.worker: Task payment.process[def456] failed: IntegrityError
+  psycopg2.errors.UniqueViolation: duplicate key value violates unique constraint "payment_order_id_key"
+  DETAIL: Key (order_id)=(ORD-8821) already exists.
+environment:
+  language: Python
+  framework: Celery 5.3 / Django 4.2
+  runtime: Python 3.11
+  broker: Redis
+source: null
+synthetic: true
+language: python
+category: race-condition
+expected_root_cause_keywords:
+  - race condition
+  - select_for_update
+  - row lock
+  - idempotent
+  - duplicate
+expected_fix_keywords:
+  - select_for_update
+  - row lock
+  - idempotency key
+  - unique constraint

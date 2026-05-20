@@ -1,0 +1,25 @@
+id: python-numpy-dtype
+bug_description: "numpy dtype mismatch: int64 array multiplied by float32 scalar produces unexpected type casting, silent precision loss"
+error_log: |
+  /app/ml/preprocessing.py:45: RuntimeWarning: invalid value encountered in multiply
+    scaled = raw_features * weight_vector
+  numpy.core._exceptions.UFuncTypeError: Cannot cast ufunc 'multiply' output from dtype('float64') to dtype('int64') with casting rule 'same_kind'
+environment:
+  language: Python
+  framework: numpy 1.26 / scikit-learn
+  runtime: Python 3.11
+source: null
+synthetic: true
+language: python
+category: serialization
+expected_root_cause_keywords:
+  - numpy
+  - dtype
+  - type casting
+  - precision
+  - float64
+expected_fix_keywords:
+  - astype
+  - dtype
+  - float64
+  - casting

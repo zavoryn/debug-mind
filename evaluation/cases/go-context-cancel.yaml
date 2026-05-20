@@ -1,0 +1,25 @@
+id: go-context-cancel
+bug_description: "Context cancelled during HTTP request but database transaction continues without checking ctx.Err(), leaving partial writes"
+error_log: |
+  {"level":"error","msg":"transaction committed after context cancelled","tx_id":"abc-123","time":"2024-03-15T10:32:01Z"}
+  -- Client received 504 Gateway Timeout, but DB has partial data --
+  -- Rows inserted: 3 of 5 expected (missing rows for dependent tables) --
+environment:
+  language: Go
+  framework: database/sql / context
+  runtime: Go 1.22
+source: null
+synthetic: true
+language: go
+category: async
+expected_root_cause_keywords:
+  - context
+  - cancel
+  - transaction
+  - ctx.Err
+  - partial
+expected_fix_keywords:
+  - ctx.Err
+  - rollback
+  - select
+  - context check

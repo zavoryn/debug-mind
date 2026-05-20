@@ -1,0 +1,31 @@
+id: docker-dns-cache
+bug_description: "Docker container DNS caching stale IP after service restart, resulting in connection refused to old container IP on overlay network"
+error_log: |
+  dial tcp 10.0.3.45:8080: connect: connection refused
+  ---
+  Expected: connect to payment-service (resolved to new IP 10.0.3.89)
+  Actual: connect to payment-service (cached old IP 10.0.3.45)
+  ---
+  /etc/resolv.conf: nameserver 127.0.0.11 (Docker embedded DNS)
+  ndots:0 (no FQDN search)
+environment:
+  language: Go
+  framework: Docker Compose / net/http
+  runtime: Go 1.22 / Docker 25
+  infrastructure: Docker overlay network
+source: null
+synthetic: true
+language: go
+category: config
+expected_root_cause_keywords:
+  - dns
+  - cache
+  - docker
+  - stale
+  - connection refused
+expected_fix_keywords:
+  - dns cache
+  - resolver
+  - ttl
+  - health check
+  - restart

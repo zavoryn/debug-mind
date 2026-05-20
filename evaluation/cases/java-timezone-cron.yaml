@@ -1,0 +1,29 @@
+id: java-timezone-cron
+bug_description: "Spring @Scheduled cron job fires at wrong hour after DST transition because server timezone differs from business timezone"
+error_log: |
+  2024-03-11 02:00:01 EST -- expected execution time
+  2024-03-11 03:00:01 EDT -- actual execution time (1 hour late)
+  ---
+  Cron expression: 0 0 2 * * ?  (intended: 2 AM EST daily)
+  Server timezone: UTC
+  Business timezone: America/New_York
+  DST started: 2024-03-10
+environment:
+  language: Java
+  framework: Spring Boot 3.2 / @Scheduled
+  runtime: JDK 21
+source: null
+synthetic: true
+language: java
+category: timezone
+expected_root_cause_keywords:
+  - timezone
+  - dst
+  - daylight saving
+  - cron
+  - scheduled
+expected_fix_keywords:
+  - zone
+  - timezone
+  - spring.scheduled.cron.zone
+  - ZoneId

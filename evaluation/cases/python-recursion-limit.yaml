@@ -1,0 +1,29 @@
+id: python-recursion-limit
+bug_description: "Recursive JSON deserialization of deeply nested user permissions tree hits Python recursion limit"
+error_log: |
+  RecursionError: maximum recursion depth exceeded while calling a Python object
+  ---
+  File "/app/permissions.py", line 23, in build_tree
+    node["children"] = [build_tree(c) for c in children]
+  ---
+  Nesting depth: ~1200 levels (Python default recursion limit: 1000)
+environment:
+  language: Python
+  framework: custom recursive parser
+  runtime: Python 3.11
+source: null
+synthetic: true
+language: python
+category: recursion
+expected_root_cause_keywords:
+  - recursion
+  - recursion limit
+  - depth
+  - stack
+  - iterative
+expected_fix_keywords:
+  - setrecursionlimit
+  - iterative
+  - stack
+  - deque
+  - trampoline
