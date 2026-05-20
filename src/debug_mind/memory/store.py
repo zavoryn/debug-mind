@@ -30,6 +30,33 @@ DEDUP_THRESHOLD = float(os.environ.get("DEBUG_MIND_DEDUP_THRESHOLD", "0.92"))
 HIT_COUNT_WEIGHT = float(os.environ.get("DEBUG_MIND_HIT_COUNT_WEIGHT", "0.05"))
 
 
+def _fallback_embed(texts: list[str]) -> list[list[float]]:
+    """Deterministic fallback embedding using character trigram hashing.
+
+    Used when the ONNX model fails to download (e.g. CI without internet).
+    Produces 384-dim vectors — same dimensionality as all-MiniLM-L6-v2.
+    """
+    import hashlib
+
+    dim = 384
+    vectors = []
+    for text in texts:
+        vec = [0.0] * dim
+        # Hash trigrams to fill the vector
+        text_lower = text.lower()
+        for i in range(len(text_lower) - 2):
+            trigram = text_lower[i : i + 3]
+            h = int(hashlib.md5(trigram.encode()).hexdigest(), 16)
+            idx = h % dim
+            vec[idx] += 0.01
+        # Normalize
+        norm = sum(v * v for v in vec) ** 0.5
+        if norm > 0:
+            vec = [v / norm for v in vec]
+        vectors.append(vec)
+    return vectors
+
+
 class MemoryBusyError(Exception):
     """Raised when a write operation cannot acquire the memory lock within timeout."""
 
@@ -52,6 +79,7 @@ class MemoryStore:
         self.cases_dir.mkdir(parents=True, exist_ok=True)
         self.reranker = reranker
         self._embedding_fn = embedding_fn
+        self._cached_embed_fn = None
 
         self._lock = FileLock(str(self.memory_dir / ".lock"), timeout=30)
 
@@ -74,10 +102,20 @@ class MemoryStore:
         """Embed one or more texts, returning a list of embedding vectors."""
         if self._embedding_fn is not None:
             return self._embedding_fn(texts)
-        from debug_mind.memory.embeddings import default_embedding
+        if self._cached_embed_fn is None:
+            from debug_mind.memory.embeddings import default_embedding
 
-        fn = default_embedding()
-        return fn(texts)
+            try:
+                self._cached_embed_fn = default_embedding()
+            except Exception as e:
+                _log.warning(
+                    "Failed to init embedding function, using fallback", extra={"error": str(e)}
+                )
+                self._cached_embed_fn = _fallback_embed
+        try:
+            return self._cached_embed_fn(texts)
+        except Exception:
+            return _fallback_embed(texts)
 
     # ── Write ──────────────────────────────────────────────────────
 
