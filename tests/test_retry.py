@@ -51,7 +51,9 @@ class TestRetryOnTransientErrors:
         )
         success = _make_response("Final answer")
 
-        with patch.object(agent.provider, "create_message", side_effect=[rlimit1, rlimit2, success]):
+        with patch.object(
+            agent.provider, "create_message", side_effect=[rlimit1, rlimit2, success]
+        ):
             result = agent.diagnose("test bug")
 
         assert result.root_cause == "Final answer"

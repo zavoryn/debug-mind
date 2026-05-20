@@ -12,9 +12,7 @@ from debug_mind.providers.base import LLMProvider, LLMResponse, LLMUsage, LLMCon
 
 class AnthropicProvider(LLMProvider):
     def __init__(self, api_key: str | None = None):
-        self.client = anthropic.Anthropic(
-            api_key=api_key or os.environ.get("ANTHROPIC_API_KEY")
-        )
+        self.client = anthropic.Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
 
     @property
     def default_model(self) -> str:
