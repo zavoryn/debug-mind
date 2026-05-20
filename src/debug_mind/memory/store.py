@@ -34,6 +34,10 @@ class MemoryBusyError(Exception):
     """Raised when a write operation cannot acquire the memory lock within timeout."""
 
 
+class ConflictError(Exception):
+    """Raised when optimistic lock version mismatch is detected."""
+
+
 class MemoryStore:
     """Persistent bug memory with vector similarity search."""
 
@@ -99,6 +103,7 @@ class MemoryStore:
         try:
             with self._lock:
                 case.updated_at = datetime.now(timezone.utc)
+                case.version = (case.version or 1) + 1
 
                 existing = self._find_dedup_target(case)
                 if existing:
@@ -241,7 +246,8 @@ class MemoryStore:
             case, score = item
             verified_mult = 1.0 if case.verified else 0.7
             hc_mult = 1.0 + math.log1p(case.hit_count) * hc_weight if hc_weight > 0 else 1.0
-            return score * verified_mult * hc_mult
+            stale_mult = 0.5 if self._is_stale(case) else 1.0
+            return score * verified_mult * hc_mult * stale_mult
 
         search_results.sort(key=effective_score, reverse=True)
         result_list = [SearchResult(case=case, score=score) for case, score in search_results]
@@ -286,20 +292,82 @@ class MemoryStore:
         by_severity: dict[str, int] = {}
         by_status: dict[str, int] = {}
         tag_counts: dict[str, int] = {}
+        stale_count = 0
+        hit_sum = 0
 
         for c in cases:
             by_severity[c.severity.value] = by_severity.get(c.severity.value, 0) + 1
             by_status[c.status.value] = by_status.get(c.status.value, 0) + 1
             for t in c.tags:
                 tag_counts[t] = tag_counts.get(t, 0) + 1
+            if self._is_stale(c):
+                stale_count += 1
+            hit_sum += c.hit_count
 
         top_tags = sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+        avg_hit_rate = round(hit_sum / len(cases), 2) if cases else 0.0
         return MemoryStats(
             total_cases=len(cases),
             by_severity=by_severity,
             by_status=by_status,
             top_tags=top_tags,
+            stale_count=stale_count,
+            avg_hit_rate=avg_hit_rate,
         )
+
+    def _is_stale(self, case: BugCase, days: int = 30) -> bool:
+        if case.hit_count > 0:
+            return False
+        if case.last_used_at is None:
+            return False
+        age = (datetime.now(timezone.utc) - case.last_used_at).days
+        return age >= days
+
+    def decay(self, days: int = 30, dry_run: bool = False) -> dict:
+        """Mark unused cases as stale. Returns count of stale cases."""
+        cases = self.list_recent(limit=10000)
+        stale_ids = [c.id for c in cases if self._is_stale(c, days=days)]
+        result = {"stale_count": len(stale_ids), "stale_ids": stale_ids, "dry_run": dry_run}
+        return result
+
+    def reverify(self, days: int = 90) -> list[str]:
+        """Return verified case IDs that haven't been re-verified in N days."""
+        cases = self.list_recent(limit=10000)
+        now = datetime.now(timezone.utc)
+        stale_ids = []
+        for c in cases:
+            if not c.verified:
+                continue
+            if c.last_verified_at is None:
+                stale_ids.append(c.id)
+                continue
+            if (now - c.last_verified_at).days >= days:
+                stale_ids.append(c.id)
+        return stale_ids
+
+    def link(self, case_a: str, case_b: str, relation: str = "related") -> bool:
+        """Link two cases with a relation type."""
+        ca = self.get(case_a)
+        cb = self.get(case_b)
+        if not ca or not cb:
+            return False
+        ca.links.append({"case_id": case_b, "relation": relation})
+        cb.links.append({"case_id": case_a, "relation": relation})
+        self._save_to_markdown(ca)
+        self._save_to_markdown(cb)
+        return True
+
+    def unlink(self, case_a: str, case_b: str) -> bool:
+        """Remove all links between two cases."""
+        ca = self.get(case_a)
+        cb = self.get(case_b)
+        if not ca or not cb:
+            return False
+        ca.links = [lk for lk in ca.links if lk["case_id"] != case_b]
+        cb.links = [lk for lk in cb.links if lk["case_id"] != case_a]
+        self._save_to_markdown(ca)
+        self._save_to_markdown(cb)
+        return True
 
     # ── Delete ────────────────────────────────────────────────────
 
@@ -359,6 +427,8 @@ class MemoryStore:
                     case.verified = True
                     case.verification_notes = notes
                     case.updated_at = datetime.now(timezone.utc)
+                    case.last_verified_at = datetime.now(timezone.utc)
+                    case.verify_count = (case.verify_count or 0) + 1
                     self._save_to_markdown(case)
                     try:
                         self._save_to_vector(case)

@@ -542,6 +542,90 @@ def plugins():
 
 
 @main.command()
+@click.option("--days", "-d", default=30, help="Days of inactivity to consider stale")
+@click.option("--dry-run", is_flag=True, help="List stale cases without changes")
+def decay(days: int, dry_run: bool):
+    """List or mark cases that have been inactive for N days."""
+    from datetime import datetime, timezone
+
+    memory = _get_memory()
+    result = memory.decay(days=days, dry_run=dry_run)
+
+    action = "Would mark" if dry_run else "Found"
+    console.print(f"[bold]{action} {result['stale_count']} stale case(s):[/bold]")
+    for cid in result["stale_ids"][:20]:
+        case = memory.get(cid)
+        if case:
+            age = (
+                "never used"
+                if not case.last_used_at
+                else (f"last used {(datetime.now(timezone.utc) - case.last_used_at).days}d ago")
+            )
+            console.print(f"  - [yellow]{cid}[/yellow] — {case.title} ({age})")
+    if len(result["stale_ids"]) > 20:
+        console.print(f"  ... and {len(result['stale_ids']) - 20} more")
+
+
+@main.command()
+@click.option("--days", "-d", default=90, help="Days since last verification to flag")
+def reverify(days: int):
+    """List verified cases that haven't been re-verified recently."""
+    from datetime import datetime, timezone
+
+    memory = _get_memory()
+    stale = memory.reverify(days=days)
+
+    if not stale:
+        console.print(f"No verified cases need re-verification (> {days}d ago).")
+        return
+
+    console.print(f"[bold]{len(stale)} verified case(s) need re-verification:[/bold]")
+    for cid in stale[:20]:
+        case = memory.get(cid)
+        if case:
+            age = (
+                "never re-verified"
+                if not case.last_verified_at
+                else (
+                    f"last verified {(datetime.now(timezone.utc) - case.last_verified_at).days}d ago"
+                )
+            )
+            console.print(f"  - [yellow]{cid}[/yellow] — {case.title} ({age})")
+    if len(stale) > 20:
+        console.print(f"  ... and {len(stale) - 20} more")
+
+
+@main.command()
+@click.argument("case_a")
+@click.argument("case_b")
+@click.option(
+    "--relation",
+    "-r",
+    default="related",
+    help="Relation type: variant, caused_by, fixed_by, related",
+)
+def link(case_a: str, case_b: str, relation: str):
+    """Link two bug cases with a relation type."""
+    memory = _get_memory()
+    if memory.link(case_a, case_b, relation):
+        console.print(f"[green]Linked {case_a} ↔ {case_b} ({relation})[/green]")
+    else:
+        console.print("[red]Failed to link — check case IDs exist.[/red]")
+
+
+@main.command()
+@click.argument("case_a")
+@click.argument("case_b")
+def unlink(case_a: str, case_b: str):
+    """Remove all links between two bug cases."""
+    memory = _get_memory()
+    if memory.unlink(case_a, case_b):
+        console.print(f"[green]Unlinked {case_a} ↔ {case_b}[/green]")
+    else:
+        console.print("[red]Failed to unlink.[/red]")
+
+
+@main.command()
 @click.option("--since", default="24h", help="Time range: 1h, 24h, 7d (default 24h)")
 @click.option("--op", default=None, help="Filter by operation: save, verify, delete, mark_used")
 def audit(since: str, op: str | None):

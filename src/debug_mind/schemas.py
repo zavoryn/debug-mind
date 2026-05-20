@@ -78,6 +78,15 @@ class BugCase(BaseModel):
     superseded_by: str | None = Field(
         default=None, description="ID of the case that replaced this one"
     )
+    last_verified_at: datetime | None = Field(
+        default=None, description="Last time this case was verified"
+    )
+    verify_count: int = Field(default=0, description="Number of times verified")
+    version: int = Field(default=1, description="Optimistic lock version for collaboration")
+    links: list[dict[str, str]] = Field(
+        default_factory=list,
+        description='Links to related cases: [{"case_id": ..., "relation": "variant"}]',
+    )
 
     def to_search_text(self) -> str:
         """Build a single text blob for embedding — includes all searchable content."""
@@ -122,3 +131,5 @@ class MemoryStats(BaseModel):
     by_severity: dict[str, int]
     by_status: dict[str, int]
     top_tags: list[tuple[str, int]]
+    stale_count: int = 0
+    avg_hit_rate: float = 0.0
