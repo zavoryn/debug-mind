@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import os
 import shutil
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from debug_mind.memory.store import MemoryStore, _case_to_markdown, _markdown_to_case
+from debug_mind.memory.store import MemoryStore
 from debug_mind.schemas import BugCase
 from debug_mind.tools.schemas import MEMORY_TOOLS, CODEBASE_TOOLS, get_tool_names
 
@@ -85,8 +84,6 @@ class TestWindowsPathTraversal:
 
         # Use a path that resolves outside — the parent of the current dir
         project = str(Path(".").resolve())
-        parent_file = str(Path("../REFACTOR_PLAN.md").resolve())
-
         # This file exists, so FileNotFoundError won't trigger
         # Instead the relative_to check should catch it
         result = read_file("../REFACTOR_PLAN.md", project)

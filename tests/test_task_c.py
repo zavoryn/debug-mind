@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import warnings
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
 
-from debug_mind.memory.embeddings import make_embedding, default_embedding
+from debug_mind.memory.embeddings import make_embedding
 from debug_mind.memory.rerank import IdentityReranker, LLMReranker, make_reranker
 from debug_mind.schemas import BugCase, SearchResult
 
@@ -34,19 +33,19 @@ class TestMakeEmbedding:
     def test_voyage_fallback_without_key(self):
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            fn = make_embedding("voyage")
+            _fn = make_embedding("voyage")
             assert any("using default" in str(x.message).lower() for x in w)
 
     def test_openai_fallback_without_key(self):
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            fn = make_embedding("openai")
+            _fn = make_embedding("openai")
             assert any("using default" in str(x.message).lower() for x in w)
 
     def test_bge_fallback_without_package(self):
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            fn = make_embedding("bge")
+            _fn = make_embedding("bge")
             assert any("using default" in str(x.message).lower() for x in w)
 
 

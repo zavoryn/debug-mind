@@ -11,7 +11,7 @@ import pytest
 from click.testing import CliRunner
 
 from debug_mind.cli import main
-from debug_mind.memory.store import MemoryStore, _case_to_markdown
+from debug_mind.memory.store import MemoryStore
 from debug_mind.schemas import BugCase, SearchResult
 
 from evaluation.dataset import BenchmarkCase, load_all_cases, load_case
@@ -26,7 +26,6 @@ from evaluation.benchmark import (
     _compute_mrr,
     SEED_CASES_DIR,
 )
-from evaluation.dataset import CASES_DIR
 
 
 # ── Dataset loading ───────────────────────────────────────────────────
@@ -56,7 +55,7 @@ class TestDatasetLoading:
     def test_all_cases_have_required_fields(self):
         cases = load_all_cases()
         for c in cases:
-            assert c.id, f"Missing id"
+            assert c.id, "Missing id"
             assert c.bug_description, f"Missing bug_description in {c.id}"
             assert len(c.expected_root_cause_keywords) >= 2, f"Too few root_cause keywords in {c.id}"
             assert len(c.expected_fix_keywords) >= 2, f"Too few fix keywords in {c.id}"

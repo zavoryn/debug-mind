@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import os
 import shutil
 import tempfile
-from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -13,7 +11,7 @@ from click.testing import CliRunner
 
 from debug_mind.cli import main
 from debug_mind.memory.store import MemoryStore
-from debug_mind.schemas import BugCase, SearchResult
+from debug_mind.schemas import BugCase
 
 
 @pytest.fixture
