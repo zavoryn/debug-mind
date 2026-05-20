@@ -12,3 +12,4 @@ memory/store/
 memory/chroma/
 memory/cases/
 memory/audit.jsonl
+.claude/

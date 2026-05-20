@@ -22,7 +22,6 @@ import json
 import os
 import warnings
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
@@ -185,7 +184,7 @@ def save_bug_case(
 
     memory = _get_memory()
 
-    from debug_mind.sanitize import sanitize_bug_input, sanitize_tags
+    from debug_mind.sanitize import sanitize_bug_input
     _, _, sanitized_env, sanitized_tags = sanitize_bug_input(
         description=title, error_log=error_log, environment=environment or {},
         tags=tags or [],

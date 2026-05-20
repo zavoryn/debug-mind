@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 
 from debug_mind.budget import TokenBudget
-from debug_mind.schemas import BugStatus
 
 
 class TestTokenBudget:

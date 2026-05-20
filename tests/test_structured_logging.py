@@ -3,11 +3,7 @@
 from __future__ import annotations
 
 import json
-import os
-from pathlib import Path
-from unittest.mock import patch
-
-import pytest
+import logging
 
 from debug_mind.observability.logger import get_logger, JSONFormatter
 
@@ -104,4 +100,3 @@ class TestLogIntegration:
         assert "{" not in result.output or "cases" not in result.output
 
 
-import logging

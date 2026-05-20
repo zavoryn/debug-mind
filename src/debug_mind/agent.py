@@ -372,7 +372,7 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
             }, "search"
 
         elif name == "save_to_memory":
-            from debug_mind.sanitize import sanitize_tags, sanitize_error_log
+            from debug_mind.sanitize import sanitize_tags
             case = BugCase(
                 title=params["title"],
                 symptoms=params["symptoms"],

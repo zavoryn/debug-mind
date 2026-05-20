@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import os
 
-import pytest
 
 from debug_mind.sanitize import (
     sanitize_description,

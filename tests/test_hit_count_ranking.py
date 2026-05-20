@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import os
 
-import pytest
 
 from debug_mind.memory.store import MemoryStore
 from debug_mind.schemas import BugCase

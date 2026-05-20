@@ -7,11 +7,9 @@ from unittest.mock import MagicMock, patch
 import httpx
 import anthropic
 
-import pytest
 
 from debug_mind.memory.store import MemoryStore
 from debug_mind.agent import DiagnosticAgent
-from debug_mind.schemas import BugStatus
 
 
 def _make_response(text="done", tool_uses=None, input_tokens=100, output_tokens=50):
@@ -72,7 +70,7 @@ class TestRetryOnTransientErrors:
         )
         mock_create = MagicMock(side_effect=err)
         with patch.object(agent.client.messages, "create", mock_create):
-            result = agent.diagnose("test bug")
+            _ = agent.diagnose("test bug")
 
         assert mock_create.call_count == 1
 
@@ -87,7 +85,7 @@ class TestRetryOnTransientErrors:
         mock_create = MagicMock(side_effect=err)
 
         with patch.object(agent.client.messages, "create", mock_create):
-            result = agent.diagnose("test bug")
+            _ = agent.diagnose("test bug")
 
         assert mock_create.call_count == 1
 

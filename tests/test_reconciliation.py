@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import os
 import time
-from pathlib import Path
 
-import pytest
 
 from debug_mind.memory.store import MemoryStore
 from debug_mind.schemas import BugCase
@@ -27,7 +25,7 @@ class TestCleanupTmps:
         os.utime(str(tmp_file), (old_time, old_time))
 
         # Re-init should clean it
-        store2 = MemoryStore(memory_dir=tmp_path / "mem")
+        _store = MemoryStore(memory_dir=tmp_path / "mem")
         assert not tmp_file.exists()
 
     def test_fresh_tmp_kept(self, tmp_path):
@@ -36,7 +34,7 @@ class TestCleanupTmps:
         tmp_file = store.cases_dir / "fresh.md.tmp"
         tmp_file.write_text("fresh content", encoding="utf-8")
 
-        store2 = MemoryStore(memory_dir=tmp_path / "mem")
+        _store = MemoryStore(memory_dir=tmp_path / "mem")
         assert tmp_file.exists()
 
 

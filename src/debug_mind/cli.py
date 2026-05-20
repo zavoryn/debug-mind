@@ -478,7 +478,7 @@ def serve():
 def audit(since: str, op: str | None):
     """Show audit log of write operations."""
     import json as _json
-    from datetime import datetime as _dt, timedelta, timezone as _tz
+    from datetime import datetime as _dt, timedelta
 
     memory = _get_memory()
     audit_path = memory.memory_dir / "audit.jsonl"

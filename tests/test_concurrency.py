@@ -12,7 +12,6 @@ vector backend.
 from __future__ import annotations
 
 import multiprocessing
-import sys
 from pathlib import Path
 from unittest.mock import patch
 
