@@ -6,13 +6,12 @@ import json
 from datetime import datetime, timezone
 
 
-
-
 def _reload_mcp(monkeypatch, tmp_path):
     """Reload MCP server module with fresh env and memory dir."""
     monkeypatch.setenv("DEBUG_MIND_MEMORY_DIR", str(tmp_path / "mem"))
     import importlib
     import debug_mind.tools.mcp_server as mod
+
     importlib.reload(mod)
     # Reset global memory so it uses the right dir
     mod._memory = None
@@ -27,7 +26,10 @@ class TestMCPAuth:
         mod = _reload_mcp(monkeypatch, tmp_path)
 
         result = mod.save_bug_case(
-            title="test", symptoms="s", root_cause="rc", fix_suggestion="fix",
+            title="test",
+            symptoms="s",
+            root_cause="rc",
+            fix_suggestion="fix",
             auth_token="",
         )
         data = json.loads(result)
@@ -38,7 +40,10 @@ class TestMCPAuth:
         mod = _reload_mcp(monkeypatch, tmp_path)
 
         result = mod.save_bug_case(
-            title="test", symptoms="s", root_cause="rc", fix_suggestion="fix",
+            title="test",
+            symptoms="s",
+            root_cause="rc",
+            fix_suggestion="fix",
             auth_token="secret123",
         )
         data = json.loads(result)
@@ -49,7 +54,10 @@ class TestMCPAuth:
         mod = _reload_mcp(monkeypatch, tmp_path)
 
         result = mod.save_bug_case(
-            title="test", symptoms="s", root_cause="rc", fix_suggestion="fix",
+            title="test",
+            symptoms="s",
+            root_cause="rc",
+            fix_suggestion="fix",
         )
         data = json.loads(result)
         assert data.get("saved") is True
@@ -68,7 +76,10 @@ class TestMCPAuth:
 
         # Save with auth first
         save_result = mod.save_bug_case(
-            title="del-me", symptoms="s", root_cause="rc", fix_suggestion="fix",
+            title="del-me",
+            symptoms="s",
+            root_cause="rc",
+            fix_suggestion="fix",
             auth_token="secret123",
         )
         case_id = json.loads(save_result)["case_id"]
@@ -89,7 +100,10 @@ class TestAuditLog:
     def test_save_creates_audit_entry(self, tmp_path, monkeypatch):
         mod = self._setup_mod(tmp_path, monkeypatch)
         result = mod.save_bug_case(
-            title="audit-test", symptoms="s", root_cause="rc", fix_suggestion="fix",
+            title="audit-test",
+            symptoms="s",
+            root_cause="rc",
+            fix_suggestion="fix",
         )
         data = json.loads(result)
         case_id = data["case_id"]
@@ -105,7 +119,10 @@ class TestAuditLog:
     def test_verify_creates_audit_entry(self, tmp_path, monkeypatch):
         mod = self._setup_mod(tmp_path, monkeypatch)
         result = mod.save_bug_case(
-            title="verify-audit", symptoms="s", root_cause="rc", fix_suggestion="fix",
+            title="verify-audit",
+            symptoms="s",
+            root_cause="rc",
+            fix_suggestion="fix",
         )
         case_id = json.loads(result)["case_id"]
         mod.verify_bug_case(case_id=case_id, correct=True, notes="looks good")
@@ -121,7 +138,10 @@ class TestAuditLog:
     def test_delete_creates_audit_entry(self, tmp_path, monkeypatch):
         mod = self._setup_mod(tmp_path, monkeypatch)
         result = mod.save_bug_case(
-            title="del-audit", symptoms="s", root_cause="rc", fix_suggestion="fix",
+            title="del-audit",
+            symptoms="s",
+            root_cause="rc",
+            fix_suggestion="fix",
         )
         case_id = json.loads(result)["case_id"]
         mod.delete_bug_case(case_id=case_id)

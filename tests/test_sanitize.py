@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 
-
 from debug_mind.sanitize import (
     sanitize_description,
     sanitize_error_log,

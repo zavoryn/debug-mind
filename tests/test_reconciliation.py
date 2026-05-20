@@ -46,7 +46,10 @@ class TestDoctorCommand:
         # Write markdown directly (bypass save to skip vector)
         case = BugCase(title="orphan-md", symptoms="s")
         md_path = store.cases_dir / f"{case.id}.md"
-        md_path.write_text(f"# orphan-md\n> case_id: `{case.id}` | severity: **medium** | status: **reported**\n", encoding="utf-8")
+        md_path.write_text(
+            f"# orphan-md\n> case_id: `{case.id}` | severity: **medium** | status: **reported**\n",
+            encoding="utf-8",
+        )
 
         result = store.doctor()
         assert result["missing_vectors"] >= 1
@@ -57,7 +60,10 @@ class TestDoctorCommand:
 
         case = BugCase(title="fix-me", symptoms="s")
         md_path = store.cases_dir / f"{case.id}.md"
-        md_path.write_text(f"# fix-me\n> case_id: `{case.id}` | severity: **medium** | status: **reported**\n", encoding="utf-8")
+        md_path.write_text(
+            f"# fix-me\n> case_id: `{case.id}` | severity: **medium** | status: **reported**\n",
+            encoding="utf-8",
+        )
 
         result = store.doctor(fix=True)
         assert result["fixed_missing"] >= 1

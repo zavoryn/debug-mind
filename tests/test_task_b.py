@@ -128,7 +128,9 @@ class TestRerank:
         )
         store.save(verified)
 
-        results = store.search("dolphin migration analysis", top_k=5, include_unverified=False, min_score=0.0)
+        results = store.search(
+            "dolphin migration analysis", top_k=5, include_unverified=False, min_score=0.0
+        )
         ids = [r.case.id for r in results]
         assert "u-case" not in ids
         assert "v-case" in ids
@@ -272,6 +274,7 @@ npe, old
         md_path.write_text(old_md, encoding="utf-8")
 
         from debug_mind.memory.store import _markdown_to_case
+
         case = _markdown_to_case(md_path)
 
         assert case is not None

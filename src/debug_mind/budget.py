@@ -98,7 +98,13 @@ class TokenBudget:
         if self.max_input_tokens and self._total_input >= self.max_input_tokens:
             return True, f"Input token budget exceeded: {self._total_input}/{self.max_input_tokens}"
         if self.max_output_tokens and self._total_output >= self.max_output_tokens:
-            return True, f"Output token budget exceeded: {self._total_output}/{self.max_output_tokens}"
+            return (
+                True,
+                f"Output token budget exceeded: {self._total_output}/{self.max_output_tokens}",
+            )
         if self.max_cost_usd is not None and self.accumulated_cost() >= self.max_cost_usd:
-            return True, f"Cost budget exceeded: ${self.accumulated_cost():.4f}/${self.max_cost_usd:.2f}"
+            return (
+                True,
+                f"Cost budget exceeded: ${self.accumulated_cost():.4f}/${self.max_cost_usd:.2f}",
+            )
         return False, None

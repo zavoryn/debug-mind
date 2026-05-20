@@ -57,7 +57,9 @@ class TestDatasetLoading:
         for c in cases:
             assert c.id, "Missing id"
             assert c.bug_description, f"Missing bug_description in {c.id}"
-            assert len(c.expected_root_cause_keywords) >= 2, f"Too few root_cause keywords in {c.id}"
+            assert len(c.expected_root_cause_keywords) >= 2, (
+                f"Too few root_cause keywords in {c.id}"
+            )
             assert len(c.expected_fix_keywords) >= 2, f"Too few fix keywords in {c.id}"
             assert len(c.seed_case_ids) >= 1, f"No seed_case_ids in {c.id}"
 
@@ -141,8 +143,22 @@ class TestEvalRunner:
             mrr=0.75,
             keyword_recall=0.6,
             case_results=[
-                CaseResult(case_id="test-a", hit_at_1=True, hit_at_3=True, hit_at_5=True, mrr=1.0, keyword_recall=0.8),
-                CaseResult(case_id="test-b", hit_at_1=False, hit_at_3=True, hit_at_5=True, mrr=0.5, keyword_recall=0.4),
+                CaseResult(
+                    case_id="test-a",
+                    hit_at_1=True,
+                    hit_at_3=True,
+                    hit_at_5=True,
+                    mrr=1.0,
+                    keyword_recall=0.8,
+                ),
+                CaseResult(
+                    case_id="test-b",
+                    hit_at_1=False,
+                    hit_at_3=True,
+                    hit_at_5=True,
+                    mrr=0.5,
+                    keyword_recall=0.4,
+                ),
             ],
         )
         text = format_results(result)

@@ -60,6 +60,7 @@ def make_embedding(provider: str | None = None) -> EmbeddingFunction:
 def _make_voyage() -> EmbeddingFunction:
     try:
         import voyageai
+
         api_key = os.environ.get("VOYAGE_API_KEY")
         if not api_key:
             raise ValueError("VOYAGE_API_KEY not set")
@@ -78,6 +79,7 @@ def _make_voyage() -> EmbeddingFunction:
 def _make_openai() -> EmbeddingFunction:
     try:
         import openai
+
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
             raise ValueError("OPENAI_API_KEY not set")
@@ -96,6 +98,7 @@ def _make_openai() -> EmbeddingFunction:
 def _make_bge() -> EmbeddingFunction:
     try:
         from sentence_transformers import SentenceTransformer
+
         model = SentenceTransformer("BAAI/bge-m3")
 
         def embed(texts: list[str]) -> list[list[float]]:

@@ -22,7 +22,10 @@ import anthropic
 from debug_mind.schemas import BugCase, DiagnosisResult, Severity, BugStatus
 from debug_mind.memory.store import MemoryStore
 from debug_mind.skills.codebase import search_code, read_file, list_project_structure
-from debug_mind.tools.schemas import MEMORY_TOOLS as _MEMORY_TOOLS, CODEBASE_TOOLS as _CODEBASE_TOOLS
+from debug_mind.tools.schemas import (
+    MEMORY_TOOLS as _MEMORY_TOOLS,
+    CODEBASE_TOOLS as _CODEBASE_TOOLS,
+)
 from debug_mind.budget import TokenBudget
 from debug_mind.observability.logger import get_logger, _try_otel_span
 from debug_mind.sanitize import sanitize_bug_input
@@ -48,6 +51,7 @@ def _is_retryable(exc: BaseException) -> bool:
     if isinstance(exc, anthropic.APIStatusError):
         return exc.status_code >= 500
     return False
+
 
 SYSTEM_PROMPT = """You are DebugMind, an expert bug diagnosis agent with access to:
 1. **Experiential Memory** — a knowledge base of past bug diagnoses.
@@ -137,7 +141,9 @@ class DiagnosticAgent:
         """
         yield from self._run_loop(bug_description, error_log, environment, stream=True)
 
-    def _build_user_message(self, bug_description: str, error_log: str, environment: dict[str, str] | None) -> str:
+    def _build_user_message(
+        self, bug_description: str, error_log: str, environment: dict[str, str] | None
+    ) -> str:
         env_str = "\n".join(f"- {k}: {v}" for k, v in (environment or {}).items())
         project_line = f"\n**Project Path:** {self.project_path}" if self.project_path else ""
         return f"""## New Bug Report
@@ -168,7 +174,9 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
 
         # Sanitize inputs before building prompt
         bug_description, error_log, environment, _ = sanitize_bug_input(
-            description=bug_description, error_log=error_log, environment=environment,
+            description=bug_description,
+            error_log=error_log,
+            environment=environment,
         )
 
         user_message = self._build_user_message(bug_description, error_log, environment)
@@ -193,18 +201,25 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
                 response = call_fn(
                     model=self.model,
                     max_tokens=4096,
-                    system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": cache_control}],
+                    system=[
+                        {"type": "text", "text": SYSTEM_PROMPT, "cache_control": cache_control}
+                    ],
                     tools=cached_tools,
                     messages=messages,
                 )
             except anthropic.APIError as e:
-                _log.warning("API error after retries", extra={"trace_id": trace_id, "error": str(e)})
+                _log.warning(
+                    "API error after retries", extra={"trace_id": trace_id, "error": str(e)}
+                )
                 if stream:
                     yield ("thinking", f"\n[API Error: {e.message}]")
                 # Save partial diagnosis with what we have
                 partial = self._build_partial_result(
-                    diagnosis_steps, saved_case_id, similar_case_ids,
-                    assistant_content=None, budget_reason=f"API error: {e.message}",
+                    diagnosis_steps,
+                    saved_case_id,
+                    similar_case_ids,
+                    assistant_content=None,
+                    budget_reason=f"API error: {e.message}",
                 )
                 yield ("done", partial)
                 return
@@ -212,20 +227,26 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
             # Budget tracking
             if self.budget and response.usage:
                 self.budget.record(response.usage)
-                _log.info("LLM response", extra={
-                    "trace_id": trace_id,
-                    "model": self.model,
-                    "tokens_in": getattr(response.usage, "input_tokens", 0),
-                    "tokens_out": getattr(response.usage, "output_tokens", 0),
-                })
+                _log.info(
+                    "LLM response",
+                    extra={
+                        "trace_id": trace_id,
+                        "model": self.model,
+                        "tokens_in": getattr(response.usage, "input_tokens", 0),
+                        "tokens_out": getattr(response.usage, "output_tokens", 0),
+                    },
+                )
                 exceeded, reason = self.budget.is_exceeded()
                 if exceeded:
                     if stream:
                         yield ("thinking", f"\n[Budget exceeded: {reason}]")
                     # Save partial diagnosis before breaking
                     partial = self._build_partial_result(
-                        diagnosis_steps, saved_case_id, similar_case_ids,
-                        assistant_content=None, budget_reason=reason,
+                        diagnosis_steps,
+                        saved_case_id,
+                        similar_case_ids,
+                        assistant_content=None,
+                        budget_reason=reason,
                     )
                     yield ("done", partial)
                     return
@@ -252,22 +273,27 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
                 result, side_effect = self._execute_tool(block.name, block.input)
                 latency_ms = int((time.monotonic() - t0) * 1000)
 
-                _log.info("tool call", extra={
-                    "trace_id": trace_id,
-                    "tool": block.name,
-                    "latency_ms": latency_ms,
-                    "found": result.get("found") if isinstance(result, dict) else None,
-                    "saved": result.get("saved") if isinstance(result, dict) else None,
-                })
+                _log.info(
+                    "tool call",
+                    extra={
+                        "trace_id": trace_id,
+                        "tool": block.name,
+                        "latency_ms": latency_ms,
+                        "found": result.get("found") if isinstance(result, dict) else None,
+                        "saved": result.get("saved") if isinstance(result, dict) else None,
+                    },
+                )
 
                 if stream:
                     yield ("tool_result", {"name": block.name, "result": result})
 
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": json.dumps(result, ensure_ascii=False),
-                })
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": json.dumps(result, ensure_ascii=False),
+                    }
+                )
 
                 step_desc = f"{block.name}({json.dumps(block.input, ensure_ascii=False)[:120]})"
                 diagnosis_steps.append(step_desc)
@@ -325,13 +351,18 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
             )
 
         saved_case = self.memory.get(saved_case_id) if saved_case_id else None
-        reasoning = f"[Budget exceeded: {budget_reason}]\n{final_text}" if final_text else f"[Budget exceeded: {budget_reason}]"
+        reasoning = (
+            f"[Budget exceeded: {budget_reason}]\n{final_text}"
+            if final_text
+            else f"[Budget exceeded: {budget_reason}]"
+        )
 
         if not saved_case and diagnosis_steps:
             case = BugCase(
                 title="Partial diagnosis (budget exceeded)",
                 symptoms="Diagnosis interrupted by budget limit",
-                root_cause=final_text or "Incomplete — budget exceeded before root cause identified",
+                root_cause=final_text
+                or "Incomplete — budget exceeded before root cause identified",
                 fix_suggestion="",
                 status=BugStatus.UNRESOLVED,
                 diagnosis_steps=diagnosis_steps,
@@ -373,6 +404,7 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
 
         elif name == "save_to_memory":
             from debug_mind.sanitize import sanitize_tags
+
             case = BugCase(
                 title=params["title"],
                 symptoms=params["symptoms"],
@@ -411,6 +443,8 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
             ), None
 
         elif name in ("search_code", "read_file", "list_project_structure"):
-            return {"error": "No project path configured. Use --project to connect a codebase."}, None
+            return {
+                "error": "No project path configured. Use --project to connect a codebase."
+            }, None
 
         return {"error": f"Unknown tool: {name}"}, None

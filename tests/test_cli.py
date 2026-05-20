@@ -1,6 +1,5 @@
 """Tests for CLI commands — uses Click's CliRunner, no API calls."""
 
-
 import pytest
 from click.testing import CliRunner
 
@@ -83,14 +82,22 @@ class TestStatsCommand:
 
     def test_stats_with_data(self, runner, memory_dir):
         store = MemoryStore(memory_dir=memory_dir)
-        store.save(BugCase(
-            title="Critical Bug", symptoms="down",
-            severity=Severity.CRITICAL, tags=["prod"],
-        ))
-        store.save(BugCase(
-            title="Low Bug", symptoms="cosmetic",
-            severity=Severity.LOW, tags=["ui"],
-        ))
+        store.save(
+            BugCase(
+                title="Critical Bug",
+                symptoms="down",
+                severity=Severity.CRITICAL,
+                tags=["prod"],
+            )
+        )
+        store.save(
+            BugCase(
+                title="Low Bug",
+                symptoms="cosmetic",
+                severity=Severity.LOW,
+                tags=["ui"],
+            )
+        )
 
         result = runner.invoke(main, ["stats"])
         assert result.exit_code == 0
@@ -122,9 +129,15 @@ class TestDiagnoseCommand:
         assert "ANTHROPIC_API_KEY" in result.output or "Error" in result.output
 
     def test_diagnose_invalid_project(self, runner, memory_dir):
-        result = runner.invoke(main, [
-            "diagnose", "--project", "/nonexistent/path", "bug",
-        ])
+        result = runner.invoke(
+            main,
+            [
+                "diagnose",
+                "--project",
+                "/nonexistent/path",
+                "bug",
+            ],
+        )
         assert result.exit_code != 0
 
 
@@ -138,8 +151,10 @@ class TestShowCommand:
     def test_show_existing_case(self, runner, memory_dir):
         store = MemoryStore(memory_dir=memory_dir)
         case = BugCase(
-            title="Test Case Show", symptoms="crash",
-            root_cause="null", fix_suggestion="fix",
+            title="Test Case Show",
+            symptoms="crash",
+            root_cause="null",
+            fix_suggestion="fix",
             tags=["show-test"],
         )
         store.save(case)

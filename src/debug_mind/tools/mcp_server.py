@@ -93,7 +93,9 @@ def search_similar_bugs(query: str, top_k: int = 5) -> str:
     results = memory.search(query=query, top_k=top_k)
 
     if not results:
-        return json.dumps({"found": 0, "message": "No similar bugs found in memory."}, ensure_ascii=False)
+        return json.dumps(
+            {"found": 0, "message": "No similar bugs found in memory."}, ensure_ascii=False
+        )
 
     output = {
         "found": len(results),
@@ -185,8 +187,11 @@ def save_bug_case(
     memory = _get_memory()
 
     from debug_mind.sanitize import sanitize_bug_input
+
     _, _, sanitized_env, sanitized_tags = sanitize_bug_input(
-        description=title, error_log=error_log, environment=environment or {},
+        description=title,
+        error_log=error_log,
+        environment=environment or {},
         tags=tags or [],
     )
 

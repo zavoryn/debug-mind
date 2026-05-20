@@ -5,8 +5,12 @@ from datetime import datetime
 import pytest
 
 from debug_mind.schemas import (
-    BugCase, DiagnosisResult, SearchResult, MemoryStats,
-    Severity, BugStatus,
+    BugCase,
+    DiagnosisResult,
+    SearchResult,
+    MemoryStats,
+    Severity,
+    BugStatus,
 )
 
 
@@ -101,12 +105,18 @@ class TestDiagnosisResult:
     def test_confidence_bounds(self):
         with pytest.raises(Exception):
             DiagnosisResult(
-                case_id="x", root_cause="r", diagnosis_steps=[], fix_suggestion="",
+                case_id="x",
+                root_cause="r",
+                diagnosis_steps=[],
+                fix_suggestion="",
                 confidence=1.5,
             )
         with pytest.raises(Exception):
             DiagnosisResult(
-                case_id="x", root_cause="r", diagnosis_steps=[], fix_suggestion="",
+                case_id="x",
+                root_cause="r",
+                diagnosis_steps=[],
+                fix_suggestion="",
                 confidence=-0.1,
             )
 

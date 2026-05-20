@@ -86,9 +86,15 @@ class TestLLMReranker:
         reranker._client = mock_client
 
         results = [
-            SearchResult(case=BugCase(title="case-a", symptoms="a", root_cause="redis pool"), score=0.9),
-            SearchResult(case=BugCase(title="case-b", symptoms="b", root_cause="memory leak"), score=0.8),
-            SearchResult(case=BugCase(title="case-c", symptoms="c", root_cause="deadlock"), score=0.7),
+            SearchResult(
+                case=BugCase(title="case-a", symptoms="a", root_cause="redis pool"), score=0.9
+            ),
+            SearchResult(
+                case=BugCase(title="case-b", symptoms="b", root_cause="memory leak"), score=0.8
+            ),
+            SearchResult(
+                case=BugCase(title="case-c", symptoms="c", root_cause="deadlock"), score=0.7
+            ),
         ]
 
         out = reranker.rerank("redis connection pool exhausted", results, top_k=3)

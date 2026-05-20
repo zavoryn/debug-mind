@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 
-
 from debug_mind.memory.store import MemoryStore
 from debug_mind.schemas import BugCase
 
@@ -37,6 +36,7 @@ class TestHitCountRanking:
 
         # Reload the module constant
         import debug_mind.memory.store as store_mod
+
         store_mod.HIT_COUNT_WEIGHT = 0.0
 
         store = MemoryStore(memory_dir=tmp_path / "mem2")

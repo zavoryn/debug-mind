@@ -15,7 +15,9 @@ from debug_mind.tools.schemas import MEMORY_TOOLS, CODEBASE_TOOLS, get_tool_name
 
 
 def _make_case(**overrides) -> BugCase:
-    defaults = dict(title="test", symptoms="test symptoms", root_cause="test cause", fix_suggestion="fix it")
+    defaults = dict(
+        title="test", symptoms="test symptoms", root_cause="test cause", fix_suggestion="fix it"
+    )
     defaults.update(overrides)
     return BugCase(**defaults)
 

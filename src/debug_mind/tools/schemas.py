@@ -14,7 +14,11 @@ MEMORY_TOOLS = [
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Bug symptoms, error, or keywords"},
-                "top_k": {"type": "integer", "description": "Max results (default 5)", "default": 5},
+                "top_k": {
+                    "type": "integer",
+                    "description": "Max results (default 5)",
+                    "default": 5,
+                },
             },
             "required": ["query"],
         },
@@ -31,7 +35,11 @@ MEMORY_TOOLS = [
                 "root_cause": {"type": "string", "description": "The identified root cause"},
                 "fix_suggestion": {"type": "string", "description": "How to fix it"},
                 "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
-                "tags": {"type": "array", "items": {"type": "string"}, "description": "Searchable tags"},
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Searchable tags",
+                },
                 "environment": {
                     "type": "object",
                     "additionalProperties": {"type": "string"},
@@ -53,7 +61,10 @@ CODEBASE_TOOLS = [
             "type": "object",
             "properties": {
                 "pattern": {"type": "string", "description": "Search pattern (supports regex)"},
-                "file_type": {"type": "string", "description": "File extension filter (e.g. 'java', 'py')"},
+                "file_type": {
+                    "type": "string",
+                    "description": "File extension filter (e.g. 'java', 'py')",
+                },
             },
             "required": ["pattern"],
         },
@@ -65,8 +76,16 @@ CODEBASE_TOOLS = [
             "type": "object",
             "properties": {
                 "file_path": {"type": "string", "description": "Relative path from project root"},
-                "start_line": {"type": "integer", "description": "Start line (0-based, default 0)", "default": 0},
-                "end_line": {"type": "integer", "description": "End line (default 100)", "default": 100},
+                "start_line": {
+                    "type": "integer",
+                    "description": "Start line (0-based, default 0)",
+                    "default": 0,
+                },
+                "end_line": {
+                    "type": "integer",
+                    "description": "End line (default 100)",
+                    "default": 100,
+                },
             },
             "required": ["file_path"],
         },
@@ -77,7 +96,11 @@ CODEBASE_TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "depth": {"type": "integer", "description": "Directory depth (default 3)", "default": 3},
+                "depth": {
+                    "type": "integer",
+                    "description": "Directory depth (default 3)",
+                    "default": 3,
+                },
             },
         },
     },

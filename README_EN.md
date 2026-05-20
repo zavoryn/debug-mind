@@ -14,7 +14,9 @@
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" />
   <img src="https://img.shields.io/badge/MCP-compatible-purple" alt="MCP Compatible" />
   <img src="https://img.shields.io/badge/RAG-powered-orange" alt="RAG Powered" />
-  <img src="https://img.shields.io/github/actions/workflow/status/zavoryn/debug-mind/ci.yml?branch=master" alt="CI" />
+  <a href="https://github.com/zavoryn/debug-mind/actions/workflows/test.yml"><img src="https://github.com/zavoryn/debug-mind/actions/workflows/test.yml/badge.svg?branch=master" alt="tests" /></a>
+  <a href="https://github.com/zavoryn/debug-mind/actions/workflows/lint.yml"><img src="https://github.com/zavoryn/debug-mind/actions/workflows/lint.yml/badge.svg?branch=master" alt="lint" /></a>
+  <img src="https://img.shields.io/badge/pypi-pre--release-lightgrey" alt="PyPI pre-release" />
 </p>
 
 ---

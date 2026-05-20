@@ -73,9 +73,12 @@ class MemoryStore:
         # Defense-in-depth: sanitize all text inputs at the store level
         # so even callers that skip sanitization are protected.
         from debug_mind.sanitize import (
-            sanitize_description, sanitize_error_log,
-            sanitize_environment, sanitize_tags,
+            sanitize_description,
+            sanitize_error_log,
+            sanitize_environment,
+            sanitize_tags,
         )
+
         case.title = sanitize_description(case.title)
         case.symptoms = sanitize_description(case.symptoms)
         case.root_cause = sanitize_description(case.root_cause)
@@ -264,7 +267,9 @@ class MemoryStore:
 
     def list_recent(self, limit: int = 20) -> list[BugCase]:
         """List most recent cases by file modification time."""
-        md_files = sorted(self.cases_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+        md_files = sorted(
+            self.cases_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True
+        )
         cases = []
         for f in md_files[:limit]:
             case = _markdown_to_case(f)
@@ -390,6 +395,7 @@ class MemoryStore:
     def _cleanup_stale_tmps(self) -> int:
         """Remove .tmp files older than 10 minutes. Returns count removed."""
         import time
+
         now = time.time()
         removed = 0
         for tmp in self.cases_dir.glob("*.tmp"):
@@ -433,11 +439,13 @@ class MemoryStore:
         for pending in self.cases_dir.glob("*.rejected.pending"):
             case_id = pending.stem.replace(".md", "").replace(".rejected", "")
             rejected_path = self.cases_dir / f"{case_id}.md.rejected"
-            pending_fixes.append({
-                "case_id": case_id,
-                "pending_path": str(pending),
-                "target_path": str(rejected_path),
-            })
+            pending_fixes.append(
+                {
+                    "case_id": case_id,
+                    "pending_path": str(pending),
+                    "target_path": str(rejected_path),
+                }
+            )
             if fix:
                 pending.rename(rejected_path)
 
@@ -473,10 +481,11 @@ class MemoryStore:
         _log.info("doctor check", extra={"op": "doctor", **result})
         return result
 
+
 def _case_to_markdown(case: BugCase) -> str:
     """Serialize a BugCase to a human-readable Markdown file."""
     env_lines = "\n".join(f"- {k}: {v}" for k, v in case.environment.items())
-    steps_lines = "\n".join(f"{i+1}. {s}" for i, s in enumerate(case.diagnosis_steps))
+    steps_lines = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(case.diagnosis_steps))
     tags_str = ", ".join(case.tags) if case.tags else "none"
 
     return f"""# {case.title}
@@ -561,7 +570,9 @@ def _markdown_to_case(path: Path) -> BugCase | None:
     case.fix_suggestion = section("Fix Suggestion")
 
     error_section = section("Error Log")
-    case.error_log = error_section.replace("```\n", "").replace("\n```", "").replace("(no log provided)", "")
+    case.error_log = (
+        error_section.replace("```\n", "").replace("\n```", "").replace("(no log provided)", "")
+    )
 
     env_section = section("Environment")
     for line in env_section.split("\n"):

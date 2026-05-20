@@ -42,6 +42,7 @@ class LLMReranker:
     def _get_client(self):
         if self._client is None:
             import anthropic
+
             self._client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
         return self._client
 

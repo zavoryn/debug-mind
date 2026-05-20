@@ -43,6 +43,7 @@ def _cli_audit(memory: MemoryStore, op: str, case_id: str, **details) -> None:
     audit_path.parent.mkdir(parents=True, exist_ok=True)
     import json as _json
     from datetime import datetime as _dt, timezone as _tz
+
     entry = {
         "ts": _dt.now(_tz.utc).isoformat(),
         "actor": "cli",
@@ -53,10 +54,12 @@ def _cli_audit(memory: MemoryStore, op: str, case_id: str, **details) -> None:
     with open(audit_path, "a", encoding="utf-8") as f:
         f.write(_json.dumps(entry, ensure_ascii=False) + "\n")
 
+
 # Load .env before anything else
 load_dotenv()
 
 console = Console()
+
 
 def _get_memory() -> MemoryStore:
     # Read env var at call time — NOT module-level constant,
@@ -77,12 +80,24 @@ def main():
 @click.option("--log", "-l", default="", help="Error log file path or inline log text")
 @click.option("--env", "-e", default="", help="Environment: key=value pairs, comma-separated")
 @click.option("--project", "-p", default="", help="Project root path for codebase access")
-@click.option("--severity", "-s", default="medium", type=click.Choice(["critical", "high", "medium", "low"]))
+@click.option(
+    "--severity", "-s", default="medium", type=click.Choice(["critical", "high", "medium", "low"])
+)
 @click.option("--no-stream", is_flag=True, help="Disable streaming output (show spinner instead)")
 @click.option("--max-cost", default=None, type=float, help="Max cost in USD (default 0.50)")
 @click.option("--max-tokens", default=None, type=int, help="Max cumulative tokens (default 50000)")
 @click.option("--no-retry", is_flag=True, help="Disable API retry on transient errors")
-def diagnose(description: str, log: str, env: str, project: str, severity: str, no_stream: bool, max_cost: float | None, max_tokens: int | None, no_retry: bool):
+def diagnose(
+    description: str,
+    log: str,
+    env: str,
+    project: str,
+    severity: str,
+    no_stream: bool,
+    max_cost: float | None,
+    max_tokens: int | None,
+    no_retry: bool,
+):
     """Diagnose a bug using AI + memory + optional codebase search."""
     # Parse environment
     environment = {}
@@ -110,12 +125,14 @@ def diagnose(description: str, log: str, env: str, project: str, severity: str, 
             sys.exit(1)
         project_path = project
 
-    console.print(Panel(
-        f"[bold]{description}[/bold]"
-        + (f"\n[dim]Project: {project_path}[/dim]" if project_path else ""),
-        title="Bug Report",
-        border_style="red",
-    ))
+    console.print(
+        Panel(
+            f"[bold]{description}[/bold]"
+            + (f"\n[dim]Project: {project_path}[/dim]" if project_path else ""),
+            title="Bug Report",
+            border_style="red",
+        )
+    )
 
     memory = _get_memory()
 
@@ -142,15 +159,23 @@ def diagnose(description: str, log: str, env: str, project: str, severity: str, 
     from debug_mind.budget import TokenBudget
 
     # Build budget from CLI args / env vars
-    cost_limit = max_cost if max_cost is not None else float(os.environ.get("DEBUG_MIND_MAX_COST", "0.50"))
-    token_limit = max_tokens if max_tokens is not None else int(os.environ.get("DEBUG_MIND_MAX_TOKENS", "50000"))
+    cost_limit = (
+        max_cost if max_cost is not None else float(os.environ.get("DEBUG_MIND_MAX_COST", "0.50"))
+    )
+    token_limit = (
+        max_tokens
+        if max_tokens is not None
+        else int(os.environ.get("DEBUG_MIND_MAX_TOKENS", "50000"))
+    )
     budget = TokenBudget(
         max_input_tokens=token_limit,
         max_output_tokens=max(token_limit // 4, 1),
         max_cost_usd=cost_limit,
     )
 
-    agent = DiagnosticAgent(memory=memory, project_path=project_path, api_key=api_key, budget=budget, no_retry=no_retry)
+    agent = DiagnosticAgent(
+        memory=memory, project_path=project_path, api_key=api_key, budget=budget, no_retry=no_retry
+    )
 
     if no_stream:
         try:
@@ -189,7 +214,9 @@ def _stream_diagnose(agent, description: str, error_log: str, environment: dict)
             parts.append(Markdown(combined))
         return Group(*parts) if parts else Text("")
 
-    with Live(_render(), console=console, refresh_per_second=4, vertical_overflow="visible") as live:
+    with Live(
+        _render(), console=console, refresh_per_second=4, vertical_overflow="visible"
+    ) as live:
         for event_type, data in agent.diagnose_stream(
             bug_description=description,
             error_log=error_log,
@@ -243,13 +270,15 @@ def _stream_diagnose(agent, description: str, error_log: str, environment: dict)
 def _print_result(result: DiagnosisResult):
     """Print the final diagnosis result."""
     console.print()
-    console.print(Panel(
-        f"[bold green]Root Cause:[/bold green]\n{result.root_cause}\n\n"
-        f"[bold yellow]Fix Suggestion:[/bold yellow]\n{result.fix_suggestion}\n\n"
-        f"[bold blue]Similar Cases Used:[/bold blue] {result.similar_cases_found}",
-        title=f"Diagnosis — {result.case_id}",
-        border_style="green",
-    ))
+    console.print(
+        Panel(
+            f"[bold green]Root Cause:[/bold green]\n{result.root_cause}\n\n"
+            f"[bold yellow]Fix Suggestion:[/bold yellow]\n{result.fix_suggestion}\n\n"
+            f"[bold blue]Similar Cases Used:[/bold blue] {result.similar_cases_found}",
+            title=f"Diagnosis — {result.case_id}",
+            border_style="green",
+        )
+    )
     console.print(f"[dim]Case ID: {result.case_id} | Steps: {len(result.diagnosis_steps)}[/dim]")
 
 
@@ -326,14 +355,16 @@ def stats():
     memory = _get_memory()
     s = memory.stats()
 
-    console.print(Panel(
-        f"[bold]Total Cases:[/bold] {s.total_cases}\n\n"
-        f"[bold]By Severity:[/bold] {s.by_severity}\n"
-        f"[bold]By Status:[/bold] {s.by_status}\n"
-        f"[bold]Top Tags:[/bold] {s.top_tags}",
-        title="Memory Store Stats",
-        border_style="blue",
-    ))
+    console.print(
+        Panel(
+            f"[bold]Total Cases:[/bold] {s.total_cases}\n\n"
+            f"[bold]By Severity:[/bold] {s.by_severity}\n"
+            f"[bold]By Status:[/bold] {s.by_status}\n"
+            f"[bold]Top Tags:[/bold] {s.top_tags}",
+            title="Memory Store Stats",
+            border_style="blue",
+        )
+    )
 
 
 @main.command()
@@ -361,24 +392,26 @@ def show(case_id: str):
         sys.exit(1)
 
     env_lines = "\n".join(f"  {k}: {v}" for k, v in case.environment.items())
-    steps_lines = "\n".join(f"  {i+1}. {s}" for i, s in enumerate(case.diagnosis_steps))
+    steps_lines = "\n".join(f"  {i + 1}. {s}" for i, s in enumerate(case.diagnosis_steps))
     tags_str = ", ".join(case.tags) if case.tags else "none"
 
-    console.print(Panel(
-        f"[bold]Title:[/bold] {case.title}\n\n"
-        f"[bold]Severity:[/bold] {case.severity.value}  |  [bold]Status:[/bold] {case.status.value}\n\n"
-        f"[bold]Environment:[/bold]\n{env_lines or '  (not specified)'}\n\n"
-        f"[bold]Symptoms:[/bold]\n  {case.symptoms}\n\n"
-        f"[bold]Error Log:[/bold]\n  {case.error_log or '(none)'}\n\n"
-        f"[bold]Root Cause:[/bold]\n  {case.root_cause or '(not yet diagnosed)'}\n\n"
-        f"[bold]Fix Suggestion:[/bold]\n  {case.fix_suggestion or '(pending)'}\n\n"
-        f"[bold]Diagnosis Steps:[/bold]\n{steps_lines or '  (none)'}\n\n"
-        f"[bold]Tags:[/bold] {tags_str}\n\n"
-        f"[dim]Created: {case.created_at.strftime('%Y-%m-%d %H:%M')}  "
-        f"Updated: {case.updated_at.strftime('%Y-%m-%d %H:%M')}[/dim]",
-        title=f"Case: {case.id}",
-        border_style="blue",
-    ))
+    console.print(
+        Panel(
+            f"[bold]Title:[/bold] {case.title}\n\n"
+            f"[bold]Severity:[/bold] {case.severity.value}  |  [bold]Status:[/bold] {case.status.value}\n\n"
+            f"[bold]Environment:[/bold]\n{env_lines or '  (not specified)'}\n\n"
+            f"[bold]Symptoms:[/bold]\n  {case.symptoms}\n\n"
+            f"[bold]Error Log:[/bold]\n  {case.error_log or '(none)'}\n\n"
+            f"[bold]Root Cause:[/bold]\n  {case.root_cause or '(not yet diagnosed)'}\n\n"
+            f"[bold]Fix Suggestion:[/bold]\n  {case.fix_suggestion or '(pending)'}\n\n"
+            f"[bold]Diagnosis Steps:[/bold]\n{steps_lines or '  (none)'}\n\n"
+            f"[bold]Tags:[/bold] {tags_str}\n\n"
+            f"[dim]Created: {case.created_at.strftime('%Y-%m-%d %H:%M')}  "
+            f"Updated: {case.updated_at.strftime('%Y-%m-%d %H:%M')}[/dim]",
+            title=f"Case: {case.id}",
+            border_style="blue",
+        )
+    )
 
 
 @main.command()
@@ -453,8 +486,7 @@ def dedupe():
             if r.case.id != c.id:
                 dupes_found += 1
                 console.print(
-                    f"  [cyan]{c.id}[/cyan] <-> [cyan]{r.case.id}[/cyan] "
-                    f"(score: {r.score:.2f})"
+                    f"  [cyan]{c.id}[/cyan] <-> [cyan]{r.case.id}[/cyan] (score: {r.score:.2f})"
                 )
 
     if dupes_found == 0:
@@ -469,6 +501,7 @@ def serve():
     """Start the MCP server for external clients."""
     console.print("[bold blue]Starting DebugMind MCP Server...[/bold blue]")
     from debug_mind.tools.mcp_server import mcp
+
     mcp.run()
 
 
@@ -568,6 +601,7 @@ def eval(search_only: bool, case_id: str, json_path: str):
 
     if json_path:
         import json as _json
+
         output = {
             "total": result.total,
             "hit_at_1": result.hit_at_1,
@@ -588,7 +622,9 @@ def eval(search_only: bool, case_id: str, json_path: str):
                 for cr in result.case_results
             ],
         }
-        Path(json_path).write_text(_json.dumps(output, indent=2, ensure_ascii=False), encoding="utf-8")
+        Path(json_path).write_text(
+            _json.dumps(output, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
         console.print(f"\n[dim]Results written to {json_path}[/dim]")
 
 
@@ -620,8 +656,12 @@ def doctor(fix: bool, delete_orphans: bool):
         table.add_row("Deleted orphans", f"[yellow]{result['deleted_orphans']}[/yellow]")
 
     console.print(table)
-    if not fix and (result["missing_vectors"] or result["orphan_vectors"] or result["pending_rejected"]):
-        console.print("[dim]Run with --fix to repair, add --delete-orphans to remove orphan vectors.[/dim]")
+    if not fix and (
+        result["missing_vectors"] or result["orphan_vectors"] or result["pending_rejected"]
+    ):
+        console.print(
+            "[dim]Run with --fix to repair, add --delete-orphans to remove orphan vectors.[/dim]"
+        )
 
 
 if __name__ == "__main__":

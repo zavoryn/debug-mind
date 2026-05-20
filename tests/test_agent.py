@@ -1,6 +1,5 @@
 """Tests for the DiagnosticAgent — tool dispatch and message building, no API calls."""
 
-
 import pytest
 
 from debug_mind.agent import DiagnosticAgent, MEMORY_TOOLS, CODEBASE_TOOLS
@@ -21,7 +20,9 @@ def agent(memory):
 
 @pytest.fixture
 def agent_with_project(memory, tmp_path):
-    return DiagnosticAgent(memory=memory, project_path=str(tmp_path / "project"), api_key="fake-key")
+    return DiagnosticAgent(
+        memory=memory, project_path=str(tmp_path / "project"), api_key="fake-key"
+    )
 
 
 class TestToolDefinitions:
@@ -63,9 +64,12 @@ class TestToolDispatch:
 
     def test_search_memory_with_existing_case(self, agent, memory):
         case = BugCase(
-            title="NPE in login", symptoms="500 error",
-            root_cause="null pointer", fix_suggestion="add null check",
-            severity=Severity.HIGH, tags=["npe"],
+            title="NPE in login",
+            symptoms="500 error",
+            root_cause="null pointer",
+            fix_suggestion="add null check",
+            severity=Severity.HIGH,
+            tags=["npe"],
         )
         memory.save(case)
 
@@ -74,25 +78,31 @@ class TestToolDispatch:
         assert result["found"] >= 1
 
     def test_save_to_memory(self, agent):
-        result, tag = agent._execute_tool("save_to_memory", {
-            "title": "Test Bug",
-            "symptoms": "crash",
-            "root_cause": "bad code",
-            "fix_suggestion": "fix it",
-            "severity": "high",
-            "tags": ["test"],
-        })
+        result, tag = agent._execute_tool(
+            "save_to_memory",
+            {
+                "title": "Test Bug",
+                "symptoms": "crash",
+                "root_cause": "bad code",
+                "fix_suggestion": "fix it",
+                "severity": "high",
+                "tags": ["test"],
+            },
+        )
         assert tag == "save"
         assert result["saved"] is True
         assert "case_id" in result
 
     def test_save_to_memory_stores_in_memory(self, agent, memory):
-        result, _ = agent._execute_tool("save_to_memory", {
-            "title": "Persisted Bug",
-            "symptoms": "error",
-            "root_cause": "typo",
-            "fix_suggestion": "fix typo",
-        })
+        result, _ = agent._execute_tool(
+            "save_to_memory",
+            {
+                "title": "Persisted Bug",
+                "symptoms": "error",
+                "root_cause": "typo",
+                "fix_suggestion": "fix typo",
+            },
+        )
         case_id = result["case_id"]
         retrieved = memory.get(case_id)
         assert retrieved is not None

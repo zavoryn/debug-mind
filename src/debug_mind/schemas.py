@@ -40,7 +40,9 @@ class BugCase(BaseModel):
         description="Runtime context: language, framework, version, module, etc.",
         examples=[{"language": "Java", "framework": "Spring Boot 3.2", "jdk": "17"}],
     )
-    symptoms: str = Field(description="What the user observed: error messages, stack traces, behavior")
+    symptoms: str = Field(
+        description="What the user observed: error messages, stack traces, behavior"
+    )
     error_log: str = Field(default="", description="Raw error log / stack trace snippet")
 
     # Diagnosis
@@ -54,7 +56,9 @@ class BugCase(BaseModel):
     status: BugStatus = BugStatus.REPORTED
 
     # Metadata
-    tags: list[str] = Field(default_factory=list, description="Searchable tags: npe, redis, spring-boot...")
+    tags: list[str] = Field(
+        default_factory=list, description="Searchable tags: npe, redis, spring-boot..."
+    )
     similar_case_ids: list[str] = Field(
         default_factory=list,
         description="IDs of similar past cases found during diagnosis",
@@ -65,9 +69,15 @@ class BugCase(BaseModel):
     # Feedback & dedup fields
     verified: bool = Field(default=False, description="Confirmed correct by user/author")
     verification_notes: str = Field(default="", description="Verification or refutation notes")
-    hit_count: int = Field(default=0, description="Times this case was retrieved and adopted by agent")
-    last_used_at: datetime | None = Field(default=None, description="Last time this case was adopted")
-    superseded_by: str | None = Field(default=None, description="ID of the case that replaced this one")
+    hit_count: int = Field(
+        default=0, description="Times this case was retrieved and adopted by agent"
+    )
+    last_used_at: datetime | None = Field(
+        default=None, description="Last time this case was adopted"
+    )
+    superseded_by: str | None = Field(
+        default=None, description="ID of the case that replaced this one"
+    )
 
     def to_search_text(self) -> str:
         """Build a single text blob for embedding — includes all searchable content."""
@@ -88,7 +98,8 @@ class DiagnosisResult(BaseModel):
     case_id: str
     root_cause: str
     confidence: float = Field(
-        ge=0, le=1,
+        ge=0,
+        le=1,
         description="1.0 if case was saved to memory, 0.0 if agent failed to save",
     )
     diagnosis_steps: list[str]

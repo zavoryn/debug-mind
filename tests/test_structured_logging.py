@@ -11,10 +11,16 @@ from debug_mind.observability.logger import get_logger, JSONFormatter
 class TestJSONFormatter:
     def test_json_output_has_required_fields(self):
         import logging
+
         fmt = JSONFormatter()
         record = logging.LogRecord(
-            name="debug_mind.test", level=logging.INFO, pathname="", lineno=0,
-            msg="test message", args=(), exc_info=None,
+            name="debug_mind.test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="test message",
+            args=(),
+            exc_info=None,
         )
         record.trace_id = "abc123"
         record.case_id = "case-456"
@@ -29,10 +35,16 @@ class TestJSONFormatter:
     def test_json_output_plain_message(self):
         """JSON log should not contain rich markup tags."""
         import logging
+
         fmt = JSONFormatter()
         record = logging.LogRecord(
-            name="debug_mind.test", level=logging.INFO, pathname="", lineno=0,
-            msg="simple message", args=(), exc_info=None,
+            name="debug_mind.test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="simple message",
+            args=(),
+            exc_info=None,
         )
         output = fmt.format(record)
         data = json.loads(output)
@@ -45,6 +57,7 @@ class TestGetLogger:
         monkeypatch.setenv("DEBUG_MIND_LOG_FORMAT", "json")
         # Force re-creation by using a unique name
         import debug_mind.observability.logger as mod
+
         log_file = str(tmp_path / "test.jsonl")
         monkeypatch.setattr(mod, "_FORMAT", "json")
         monkeypatch.setattr(mod, "_LOG_FILE", log_file)
@@ -53,6 +66,7 @@ class TestGetLogger:
         logger.handlers.clear()
 
         from debug_mind.observability.logger import get_logger
+
         log = get_logger("test_json")
         log.info("hello world", extra={"trace_id": "t1"})
 
@@ -71,6 +85,7 @@ class TestGetLogger:
     def test_otel_import_doesnt_crash(self):
         """_try_otel_span should not crash even without opentelemetry."""
         from debug_mind.observability.logger import _try_otel_span
+
         _try_otel_span("test-trace", case_id="c1")
 
 
@@ -98,5 +113,3 @@ class TestLogIntegration:
         # Should show "Memory is empty" or similar — no JSON on stdout
         assert result.exit_code == 0
         assert "{" not in result.output or "cases" not in result.output
-
-

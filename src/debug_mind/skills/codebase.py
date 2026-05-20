@@ -13,7 +13,9 @@ import subprocess
 from pathlib import Path
 
 
-def search_code(pattern: str, project_path: str, file_type: str = "", max_results: int = 30) -> dict:
+def search_code(
+    pattern: str, project_path: str, file_type: str = "", max_results: int = 30
+) -> dict:
     """Search codebase for a pattern using ripgrep or grep.
 
     Returns matched lines with file:line_number:content format.
@@ -49,11 +51,13 @@ def search_code(pattern: str, project_path: str, file_type: str = "", max_result
         rest = line[colon_offset:]
         parts = rest.split(":", 2)
         if len(parts) >= 3:
-            matches.append({
-                "file": line[:colon_offset] + parts[0],
-                "line_number": parts[1],
-                "content": parts[2].strip()[:200],
-            })
+            matches.append(
+                {
+                    "file": line[:colon_offset] + parts[0],
+                    "line_number": parts[1],
+                    "content": parts[2].strip()[:200],
+                }
+            )
 
     return {
         "found": len(matches),
@@ -102,9 +106,22 @@ def list_project_structure(project_path: str, depth: int = 3, max_entries: int =
     Skips common non-essential directories (node_modules, .git, __pycache__, etc.)
     """
     skip_dirs = {
-        ".git", "__pycache__", "node_modules", ".venv", "venv", ".idea",
-        ".gradle", "target", "build", "dist", ".next", ".nuxt",
-        "chroma", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+        ".git",
+        "__pycache__",
+        "node_modules",
+        ".venv",
+        "venv",
+        ".idea",
+        ".gradle",
+        "target",
+        "build",
+        "dist",
+        ".next",
+        ".nuxt",
+        "chroma",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
     }
     skip_exts = {".pyc", ".class", ".jar", ".war", ".pyo"}
 
@@ -152,7 +169,9 @@ def list_project_structure(project_path: str, depth: int = 3, max_entries: int =
     }
 
 
-def _build_grep_cmd(pattern: str, project_path: str, file_type: str, max_results: int) -> list[str] | None:
+def _build_grep_cmd(
+    pattern: str, project_path: str, file_type: str, max_results: int
+) -> list[str] | None:
     """Build grep command — prefers ripgrep, falls back to GNU grep."""
     if _has_cmd("rg"):
         cmd = ["rg", "--no-heading", "--line-number", "--color=never", f"--max-count={max_results}"]

@@ -38,8 +38,18 @@ class JSONFormatter(logging.Formatter):
             "msg": record.getMessage(),
         }
         # Merge structured extra fields
-        for key in ("trace_id", "case_id", "model", "tokens_in", "tokens_out",
-                     "latency_ms", "tool", "found", "saved", "op"):
+        for key in (
+            "trace_id",
+            "case_id",
+            "model",
+            "tokens_in",
+            "tokens_out",
+            "latency_ms",
+            "tool",
+            "found",
+            "saved",
+            "op",
+        ):
             val = getattr(record, key, None)
             if val is not None:
                 entry[key] = val
@@ -62,19 +72,25 @@ def get_logger(name: str) -> logging.Logger:
         handler.setFormatter(JSONFormatter())
     else:
         handler = logging.StreamHandler(sys.stderr)
-        handler.setFormatter(logging.Formatter(
-            "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-            datefmt="%Y-%m-%dT%H:%M:%S",
-        ))
+        handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+                datefmt="%Y-%m-%dT%H:%M:%S",
+            )
+        )
 
     if _LOG_FILE:
         path = Path(_LOG_FILE)
         path.parent.mkdir(parents=True, exist_ok=True)
         handler = logging.FileHandler(str(path), encoding="utf-8")
-        handler.setFormatter(JSONFormatter() if _FORMAT == "json" else logging.Formatter(
-            "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-            datefmt="%Y-%m-%dT%H:%M:%S",
-        ))
+        handler.setFormatter(
+            JSONFormatter()
+            if _FORMAT == "json"
+            else logging.Formatter(
+                "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+                datefmt="%Y-%m-%dT%H:%M:%S",
+            )
+        )
 
     logger.addHandler(handler)
     return logger
@@ -84,6 +100,7 @@ def _try_otel_span(trace_id: str, **attrs) -> None:
     """Best-effort OTel integration: if opentelemetry-api is installed, set span attributes."""
     try:
         from opentelemetry import trace
+
         span = trace.get_current_span()
         if span.is_recording():
             span.set_attribute("debug_mind.trace_id", trace_id)
