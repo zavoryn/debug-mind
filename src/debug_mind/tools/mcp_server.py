@@ -11,11 +11,18 @@ Tools exposed:
   - list_recent_bugs: List recently diagnosed cases
   - get_bug_stats: Get memory store statistics
   - verify_bug_case: Mark a case as verified correct or rejected
+  - delete_bug_case: Delete a case from memory
+
+Auth: Set DEBUG_MIND_MCP_TOKEN to require authentication on write tools.
 """
 
 from __future__ import annotations
 
 import json
+import os
+import warnings
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
@@ -26,13 +33,54 @@ from debug_mind.schemas import BugCase, Severity, BugStatus
 mcp = FastMCP("debug-mind-memory")
 
 _memory: MemoryStore | None = None
+_mcp_token: str | None = os.environ.get("DEBUG_MIND_MCP_TOKEN", None)
+
+if _mcp_token:
+    pass  # Token is set, write tools will require it
+else:
+    warnings.warn(
+        "DEBUG_MIND_MCP_TOKEN not set — MCP write tools are open to all clients. "
+        "Set this env var to enable authentication.",
+        stacklevel=2,
+    )
 
 
 def _get_memory() -> MemoryStore:
     global _memory
     if _memory is None:
-        _memory = MemoryStore()
+        # Read env var at call time — NOT module-level DEFAULT_MEMORY_DIR,
+        # which is frozen at import time and immune to monkeypatch.setenv.
+        memory_dir = os.environ.get("DEBUG_MIND_MEMORY_DIR", "memory")
+        _memory = MemoryStore(memory_dir=memory_dir)
     return _memory
+
+
+def _audit_log(op: str, case_id: str, actor: str = "mcp", **details) -> None:
+    """Append an audit entry to memory/audit.jsonl."""
+    mem = _get_memory()
+    audit_path = mem.memory_dir / "audit.jsonl"
+    audit_path.parent.mkdir(parents=True, exist_ok=True)
+    entry = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "actor": actor,
+        "op": op,
+        "case_id": case_id,
+        "details": details,
+    }
+    with open(audit_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def _check_auth(token: str | None) -> str | None:
+    """Return error message if auth fails, None if OK."""
+    if not _mcp_token:
+        return None
+    if token != _mcp_token:
+        return json.dumps({"error": "auth_required"}, ensure_ascii=False)
+    return None
+
+
+# ── Read tools (no auth required) ──────────────────────────────────────
 
 
 @mcp.tool()
@@ -65,44 +113,6 @@ def search_similar_bugs(query: str, top_k: int = 5) -> str:
         ],
     }
     return json.dumps(output, indent=2, ensure_ascii=False)
-
-
-@mcp.tool()
-def save_bug_case(
-    title: str,
-    symptoms: str,
-    root_cause: str,
-    fix_suggestion: str,
-    error_log: str = "",
-    severity: str = "medium",
-    tags: Optional[list[str]] = None,
-    environment: Optional[dict[str, str]] = None,
-    diagnosis_steps: Optional[list[str]] = None,
-    similar_case_ids: Optional[list[str]] = None,
-) -> str:
-    """Save a diagnosed bug case to the experiential memory.
-
-    Call this after completing a bug diagnosis so future investigations
-    can benefit from this knowledge.
-    """
-    memory = _get_memory()
-
-    case = BugCase(
-        title=title,
-        symptoms=symptoms,
-        error_log=error_log,
-        root_cause=root_cause,
-        fix_suggestion=fix_suggestion,
-        severity=Severity(severity),
-        status=BugStatus.ROOT_CAUSE_FOUND,
-        tags=tags or [],
-        environment=environment or {},
-        diagnosis_steps=diagnosis_steps or [],
-        similar_case_ids=similar_case_ids or [],
-    )
-
-    memory.save(case)
-    return json.dumps({"saved": True, "case_id": case.id}, ensure_ascii=False)
 
 
 @mcp.tool()
@@ -147,27 +157,90 @@ def get_bug_stats() -> str:
     )
 
 
+# ── Write tools (auth required if token is set) ────────────────────────
+
+
 @mcp.tool()
-def delete_bug_case(case_id: str) -> str:
+def save_bug_case(
+    title: str,
+    symptoms: str,
+    root_cause: str,
+    fix_suggestion: str,
+    error_log: str = "",
+    severity: str = "medium",
+    tags: Optional[list[str]] = None,
+    environment: Optional[dict[str, str]] = None,
+    diagnosis_steps: Optional[list[str]] = None,
+    similar_case_ids: Optional[list[str]] = None,
+    auth_token: str = "",
+) -> str:
+    """Save a diagnosed bug case to the experiential memory.
+
+    Call this after completing a bug diagnosis so future investigations
+    can benefit from this knowledge.
+    """
+    err = _check_auth(auth_token)
+    if err:
+        return err
+
+    memory = _get_memory()
+
+    from debug_mind.sanitize import sanitize_bug_input, sanitize_tags
+    _, _, sanitized_env, sanitized_tags = sanitize_bug_input(
+        description=title, error_log=error_log, environment=environment or {},
+        tags=tags or [],
+    )
+
+    case = BugCase(
+        title=title,
+        symptoms=symptoms,
+        error_log=error_log,
+        root_cause=root_cause,
+        fix_suggestion=fix_suggestion,
+        severity=Severity(severity),
+        status=BugStatus.ROOT_CAUSE_FOUND,
+        tags=sanitized_tags,
+        environment=sanitized_env,
+        diagnosis_steps=diagnosis_steps or [],
+        similar_case_ids=similar_case_ids or [],
+    )
+
+    memory.save(case)
+    _audit_log("save", case.id, title=title)
+    return json.dumps({"saved": True, "case_id": case.id}, ensure_ascii=False)
+
+
+@mcp.tool()
+def delete_bug_case(case_id: str, auth_token: str = "") -> str:
     """Delete a bug case from memory by its ID."""
+    err = _check_auth(auth_token)
+    if err:
+        return err
+
     memory = _get_memory()
     deleted = memory.delete(case_id)
     if not deleted:
         return json.dumps({"error": f"Case {case_id} not found"}, ensure_ascii=False)
+    _audit_log("delete", case_id)
     return json.dumps({"deleted": True, "case_id": case_id}, ensure_ascii=False)
 
 
 @mcp.tool()
-def verify_bug_case(case_id: str, correct: bool, notes: str = "") -> str:
+def verify_bug_case(case_id: str, correct: bool, notes: str = "", auth_token: str = "") -> str:
     """Verify a bug case as correct or mark it as wrong.
 
     correct=True marks the case as verified; correct=False removes it from
     the search index (soft delete — markdown file kept with .rejected suffix).
     """
+    err = _check_auth(auth_token)
+    if err:
+        return err
+
     memory = _get_memory()
     ok = memory.verify(case_id, correct=correct, notes=notes)
     if not ok:
         return json.dumps({"error": f"Case {case_id} not found"}, ensure_ascii=False)
+    _audit_log("verify", case_id, correct=correct)
     if correct:
         return json.dumps({"verified": True, "case_id": case_id}, ensure_ascii=False)
     return json.dumps({"rejected": True, "case_id": case_id}, ensure_ascii=False)

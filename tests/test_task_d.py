@@ -141,6 +141,8 @@ class TestToolSchemaSingleSource:
         for mcp_name, schema_name in pairs:
             mcp_fn = getattr(mcp_server, mcp_name)
             mcp_params = set(inspect.signature(mcp_fn).parameters.keys())
+            # Exclude auth_token added by P2-5 MCP auth
+            mcp_params.discard("auth_token")
 
             schema = next(t for t in MEMORY_TOOLS if t["name"] == schema_name)
             schema_props = set(schema["input_schema"]["properties"].keys())

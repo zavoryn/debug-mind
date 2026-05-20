@@ -33,19 +33,36 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from debug_mind.memory.store import MemoryStore
+from debug_mind.memory.store import MemoryStore, MemoryBusyError
 from debug_mind.schemas import DiagnosisResult
+
+
+def _cli_audit(memory: MemoryStore, op: str, case_id: str, **details) -> None:
+    """Write audit log entry from CLI."""
+    audit_path = memory.memory_dir / "audit.jsonl"
+    audit_path.parent.mkdir(parents=True, exist_ok=True)
+    import json as _json
+    from datetime import datetime as _dt, timezone as _tz
+    entry = {
+        "ts": _dt.now(_tz.utc).isoformat(),
+        "actor": "cli",
+        "op": op,
+        "case_id": case_id,
+        "details": details,
+    }
+    with open(audit_path, "a", encoding="utf-8") as f:
+        f.write(_json.dumps(entry, ensure_ascii=False) + "\n")
 
 # Load .env before anything else
 load_dotenv()
 
 console = Console()
 
-DEFAULT_MEMORY_DIR = Path(os.environ.get("DEBUG_MIND_MEMORY_DIR", "memory"))
-
-
 def _get_memory() -> MemoryStore:
-    return MemoryStore(memory_dir=DEFAULT_MEMORY_DIR)
+    # Read env var at call time — NOT module-level constant,
+    # which is frozen at import time and immune to monkeypatch.setenv.
+    memory_dir = os.environ.get("DEBUG_MIND_MEMORY_DIR", "memory")
+    return MemoryStore(memory_dir=memory_dir)
 
 
 @click.group()
@@ -62,7 +79,10 @@ def main():
 @click.option("--project", "-p", default="", help="Project root path for codebase access")
 @click.option("--severity", "-s", default="medium", type=click.Choice(["critical", "high", "medium", "low"]))
 @click.option("--no-stream", is_flag=True, help="Disable streaming output (show spinner instead)")
-def diagnose(description: str, log: str, env: str, project: str, severity: str, no_stream: bool):
+@click.option("--max-cost", default=None, type=float, help="Max cost in USD (default 0.50)")
+@click.option("--max-tokens", default=None, type=int, help="Max cumulative tokens (default 50000)")
+@click.option("--no-retry", is_flag=True, help="Disable API retry on transient errors")
+def diagnose(description: str, log: str, env: str, project: str, severity: str, no_stream: bool, max_cost: float | None, max_tokens: int | None, no_retry: bool):
     """Diagnose a bug using AI + memory + optional codebase search."""
     # Parse environment
     environment = {}
@@ -119,19 +139,37 @@ def diagnose(description: str, log: str, env: str, project: str, severity: str, 
         sys.exit(1)
 
     from debug_mind.agent import DiagnosticAgent
+    from debug_mind.budget import TokenBudget
 
-    agent = DiagnosticAgent(memory=memory, project_path=project_path, api_key=api_key)
+    # Build budget from CLI args / env vars
+    cost_limit = max_cost if max_cost is not None else float(os.environ.get("DEBUG_MIND_MAX_COST", "0.50"))
+    token_limit = max_tokens if max_tokens is not None else int(os.environ.get("DEBUG_MIND_MAX_TOKENS", "50000"))
+    budget = TokenBudget(
+        max_input_tokens=token_limit,
+        max_output_tokens=max(token_limit // 4, 1),
+        max_cost_usd=cost_limit,
+    )
+
+    agent = DiagnosticAgent(memory=memory, project_path=project_path, api_key=api_key, budget=budget, no_retry=no_retry)
 
     if no_stream:
-        with console.status("[bold blue]Agent is diagnosing..."):
-            result = agent.diagnose(
-                bug_description=description,
-                error_log=error_log,
-                environment=environment,
-            )
+        try:
+            with console.status("[bold blue]Agent is diagnosing..."):
+                result = agent.diagnose(
+                    bug_description=description,
+                    error_log=error_log,
+                    environment=environment,
+                )
+        except MemoryBusyError as e:
+            console.print(f"[red]Error: {e}[/red]")
+            sys.exit(1)
         _print_result(result)
     else:
-        result = _stream_diagnose(agent, description, error_log, environment)
+        try:
+            result = _stream_diagnose(agent, description, error_log, environment)
+        except MemoryBusyError as e:
+            console.print(f"[red]Error: {e}[/red]")
+            sys.exit(1)
         _print_result(result)
 
 
@@ -302,8 +340,12 @@ def stats():
 def rebuild():
     """Rebuild the vector index from Markdown files."""
     memory = _get_memory()
-    with console.status("[bold blue]Rebuilding vector index..."):
-        count = memory.rebuild_index()
+    try:
+        with console.status("[bold blue]Rebuilding vector index..."):
+            count = memory.rebuild_index()
+    except MemoryBusyError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
     console.print(f"[green]Rebuilt index with {count} cases.[/green]")
 
 
@@ -345,8 +387,13 @@ def show(case_id: str):
 def delete(case_id: str):
     """Delete a bug case from memory."""
     memory = _get_memory()
-    deleted = memory.delete(case_id)
+    try:
+        deleted = memory.delete(case_id)
+    except MemoryBusyError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
     if deleted:
+        _cli_audit(memory, "delete", case_id)
         console.print(f"[green]Case '{case_id}' deleted.[/green]")
     else:
         console.print(f"[red]Case '{case_id}' not found.[/red]")
@@ -365,20 +412,26 @@ def verify(case_id: str, action: str | None, notes: str):
         sys.exit(1)
 
     memory = _get_memory()
-    if action == "correct":
-        ok = memory.verify(case_id, correct=True, notes=notes)
-        if ok:
-            console.print(f"[green]Case '{case_id}' marked as verified.[/green]")
-        else:
-            console.print(f"[red]Case '{case_id}' not found.[/red]")
-            sys.exit(1)
-    elif action == "wrong":
-        ok = memory.verify(case_id, correct=False, notes=notes)
-        if ok:
-            console.print(f"[yellow]Case '{case_id}' rejected and removed from index.[/yellow]")
-        else:
-            console.print(f"[red]Case '{case_id}' not found.[/red]")
-            sys.exit(1)
+    try:
+        if action == "correct":
+            ok = memory.verify(case_id, correct=True, notes=notes)
+            if ok:
+                _cli_audit(memory, "verify", case_id, correct=True)
+                console.print(f"[green]Case '{case_id}' marked as verified.[/green]")
+            else:
+                console.print(f"[red]Case '{case_id}' not found.[/red]")
+                sys.exit(1)
+        elif action == "wrong":
+            ok = memory.verify(case_id, correct=False, notes=notes)
+            if ok:
+                _cli_audit(memory, "verify", case_id, correct=False)
+                console.print(f"[yellow]Case '{case_id}' rejected and removed from index.[/yellow]")
+            else:
+                console.print(f"[red]Case '{case_id}' not found.[/red]")
+                sys.exit(1)
+    except MemoryBusyError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
 
 
 @main.command()
@@ -417,6 +470,71 @@ def serve():
     console.print("[bold blue]Starting DebugMind MCP Server...[/bold blue]")
     from debug_mind.tools.mcp_server import mcp
     mcp.run()
+
+
+@main.command()
+@click.option("--since", default="24h", help="Time range: 1h, 24h, 7d (default 24h)")
+@click.option("--op", default=None, help="Filter by operation: save, verify, delete, mark_used")
+def audit(since: str, op: str | None):
+    """Show audit log of write operations."""
+    import json as _json
+    from datetime import datetime as _dt, timedelta, timezone as _tz
+
+    memory = _get_memory()
+    audit_path = memory.memory_dir / "audit.jsonl"
+
+    if not audit_path.exists():
+        console.print("[yellow]No audit log found.[/yellow]")
+        return
+
+    # Parse --since
+    since_map = {"1h": timedelta(hours=1), "24h": timedelta(hours=24), "7d": timedelta(days=7)}
+    delta = since_map.get(since, timedelta(hours=24))
+    cutoff = _dt.now() - delta
+
+    entries = []
+    with open(audit_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = _json.loads(line)
+            except _json.JSONDecodeError:
+                continue
+            if op and entry.get("op") != op:
+                continue
+            ts_str = entry.get("ts", "")
+            try:
+                ts = _dt.fromisoformat(ts_str).replace(tzinfo=None)
+                if ts < cutoff:
+                    continue
+            except (ValueError, TypeError):
+                pass
+            entries.append(entry)
+
+    if not entries:
+        console.print("[yellow]No matching audit entries.[/yellow]")
+        return
+
+    table = Table(title=f"Audit Log (last {since})")
+    table.add_column("Time", width=19)
+    table.add_column("Actor", width=6)
+    table.add_column("Op", width=10)
+    table.add_column("Case ID", width=14)
+    table.add_column("Details", width=30)
+
+    for e in reversed(entries[-50:]):
+        details = ", ".join(f"{k}={v}" for k, v in e.get("details", {}).items())
+        table.add_row(
+            e.get("ts", "")[:19],
+            e.get("actor", "?"),
+            e.get("op", "?"),
+            e.get("case_id", "?"),
+            details[:30],
+        )
+
+    console.print(table)
 
 
 @main.command()
@@ -472,6 +590,38 @@ def eval(search_only: bool, case_id: str, json_path: str):
         }
         Path(json_path).write_text(_json.dumps(output, indent=2, ensure_ascii=False), encoding="utf-8")
         console.print(f"\n[dim]Results written to {json_path}[/dim]")
+
+
+@main.command()
+@click.option("--fix", is_flag=True, help="Fix missing vectors by re-indexing")
+@click.option("--delete-orphans", is_flag=True, help="Delete orphan vectors (requires --fix)")
+def doctor(fix: bool, delete_orphans: bool):
+    """Diagnose and fix inconsistencies between markdown and vector store."""
+    memory = _get_memory()
+    result = memory.doctor(fix=fix, delete_orphans=delete_orphans and fix)
+
+    table = Table(title="Memory Health Check")
+    table.add_column("Issue", width=25)
+    table.add_column("Count", width=8)
+
+    issues = [
+        ("Missing vectors", result["missing_vectors"]),
+        ("Orphan vectors", result["orphan_vectors"]),
+        ("Pending rejections", result["pending_rejected"]),
+    ]
+    for label, count in issues:
+        color = "green" if count == 0 else "yellow" if count < 5 else "red"
+        table.add_row(label, f"[{color}]{count}[/{color}]")
+
+    if fix:
+        table.add_row("Fixed missing", f"[green]{result['fixed_missing']}[/green]")
+        table.add_row("Fixed pending", f"[green]{result['fixed_pending']}[/green]")
+    if delete_orphans and fix:
+        table.add_row("Deleted orphans", f"[yellow]{result['deleted_orphans']}[/yellow]")
+
+    console.print(table)
+    if not fix and (result["missing_vectors"] or result["orphan_vectors"] or result["pending_rejected"]):
+        console.print("[dim]Run with --fix to repair, add --delete-orphans to remove orphan vectors.[/dim]")
 
 
 if __name__ == "__main__":

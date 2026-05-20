@@ -12,6 +12,7 @@ Design decisions:
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 from pathlib import Path
@@ -19,11 +20,21 @@ from datetime import datetime, timezone
 
 import chromadb
 
+from filelock import FileLock, Timeout as FileLockTimeout
+
 from debug_mind.schemas import BugCase, SearchResult, MemoryStats, Severity, BugStatus
+from debug_mind.observability.logger import get_logger
+
+_log = get_logger("memory")
 
 COLLECTION_NAME = "bug_cases"
 DEFAULT_MEMORY_DIR = Path(os.environ.get("DEBUG_MIND_MEMORY_DIR", "memory"))
 DEDUP_THRESHOLD = float(os.environ.get("DEBUG_MIND_DEDUP_THRESHOLD", "0.92"))
+HIT_COUNT_WEIGHT = float(os.environ.get("DEBUG_MIND_HIT_COUNT_WEIGHT", "0.05"))
+
+
+class MemoryBusyError(Exception):
+    """Raised when a write operation cannot acquire the memory lock within timeout."""
 
 
 class MemoryStore:
@@ -40,6 +51,8 @@ class MemoryStore:
         self.cases_dir.mkdir(parents=True, exist_ok=True)
         self.reranker = reranker
 
+        self._lock = FileLock(str(self.memory_dir / ".lock"), timeout=30)
+
         self.client = chromadb.PersistentClient(path=str(self.memory_dir / "chroma"))
 
         collection_kwargs: dict = {
@@ -51,27 +64,43 @@ class MemoryStore:
 
         self.collection = self.client.get_or_create_collection(**collection_kwargs)
 
+        self._cleanup_stale_tmps()
+
     # ── Write ──────────────────────────────────────────────────────
 
     def save(self, case: BugCase) -> BugCase:
         """Persist a bug case. Deduplicates against verified existing cases."""
-        case.updated_at = datetime.now(timezone.utc)
-
-        # Dedup: if a very similar verified case exists, merge instead of creating new
-        existing = self._find_dedup_target(case)
-        if existing:
-            return existing
-
-        # Write markdown first (source of truth), then upsert vector
-        self._save_to_markdown(case)
+        # Defense-in-depth: sanitize all text inputs at the store level
+        # so even callers that skip sanitization are protected.
+        from debug_mind.sanitize import (
+            sanitize_description, sanitize_error_log,
+            sanitize_environment, sanitize_tags,
+        )
+        case.title = sanitize_description(case.title)
+        case.symptoms = sanitize_description(case.symptoms)
+        case.root_cause = sanitize_description(case.root_cause)
+        case.fix_suggestion = sanitize_description(case.fix_suggestion)
+        case.error_log = sanitize_error_log(case.error_log)
+        case.environment = sanitize_environment(case.environment)
+        case.tags = sanitize_tags(case.tags)
 
         try:
-            self._save_to_vector(case)
-        except Exception as e:
-            # Vector write failure is non-fatal — rebuild_index will fix it
-            import logging
-            logging.getLogger(__name__).warning(f"Vector upsert failed for {case.id}: {e}")
+            with self._lock:
+                case.updated_at = datetime.now(timezone.utc)
 
+                existing = self._find_dedup_target(case)
+                if existing:
+                    return existing
+
+                self._save_to_markdown(case)
+
+                try:
+                    self._save_to_vector(case)
+                except Exception as e:
+                    _log.warning(f"Vector upsert failed for {case.id}: {e}")
+        except FileLockTimeout:
+            raise MemoryBusyError("Memory is busy — another process is writing. Retry in a moment.")
+        _log.info("case saved", extra={"op": "save", "case_id": case.id})
         return case
 
     def _find_dedup_target(self, case: BugCase) -> BugCase | None:
@@ -198,10 +227,14 @@ class MemoryStore:
                     continue
                 search_results.append((case, round(score, 4)))
 
-        # Rerank: verified cases get full score, unverified get 0.7 multiplier
+        # Rerank: verified boost + hit_count log-weighted boost
+        hc_weight = HIT_COUNT_WEIGHT
+
         def effective_score(item: tuple[BugCase, float]) -> float:
             case, score = item
-            return score * (1.0 if case.verified else 0.7)
+            verified_mult = 1.0 if case.verified else 0.7
+            hc_mult = 1.0 + math.log1p(case.hit_count) * hc_weight if hc_weight > 0 else 1.0
+            return score * verified_mult * hc_mult
 
         search_results.sort(key=effective_score, reverse=True)
         result_list = [SearchResult(case=case, score=score) for case, score in search_results]
@@ -266,11 +299,16 @@ class MemoryStore:
         md_path = self.cases_dir / f"{case_id}.md"
         if not md_path.exists():
             return False
-        md_path.unlink()
         try:
-            self.collection.delete(ids=[case_id])
-        except Exception:
-            pass
+            with self._lock:
+                md_path.unlink()
+                try:
+                    self.collection.delete(ids=[case_id])
+                except Exception:
+                    pass
+        except FileLockTimeout:
+            raise MemoryBusyError("Memory is busy — another process is writing. Retry in a moment.")
+        _log.info("case deleted", extra={"op": "delete", "case_id": case_id})
         return True
 
     # ── Feedback ──────────────────────────────────────────────────
@@ -280,13 +318,18 @@ class MemoryStore:
         case = self.get(case_id)
         if not case:
             return
-        case.hit_count += 1
-        case.last_used_at = datetime.now(timezone.utc)
-        self._save_to_markdown(case)
         try:
-            self._save_to_vector(case)
-        except Exception:
-            pass
+            with self._lock:
+                case.hit_count += 1
+                case.last_used_at = datetime.now(timezone.utc)
+                self._save_to_markdown(case)
+                try:
+                    self._save_to_vector(case)
+                except Exception:
+                    pass
+        except FileLockTimeout:
+            raise MemoryBusyError("Memory is busy — another process is writing. Retry in a moment.")
+        _log.info("case marked used", extra={"op": "mark_used", "case_id": case_id})
 
     def verify(self, case_id: str, correct: bool, notes: str = "") -> bool:
         """Mark a case as verified (correct=True) or rejected (correct=False).
@@ -301,23 +344,30 @@ class MemoryStore:
         if not case:
             return False
 
-        if correct:
-            case.verified = True
-            case.verification_notes = notes
-            case.updated_at = datetime.now(timezone.utc)
-            self._save_to_markdown(case)
-            try:
-                self._save_to_vector(case)
-            except Exception:
-                pass
-        else:
-            # Soft delete: rename to .rejected, remove from vector store
-            rejected_path = self.cases_dir / f"{case_id}.md.rejected"
-            md_path.rename(rejected_path)
-            try:
-                self.collection.delete(ids=[case_id])
-            except Exception:
-                pass
+        try:
+            with self._lock:
+                if correct:
+                    case.verified = True
+                    case.verification_notes = notes
+                    case.updated_at = datetime.now(timezone.utc)
+                    self._save_to_markdown(case)
+                    try:
+                        self._save_to_vector(case)
+                    except Exception:
+                        pass
+                else:
+                    # Transactional reject: .pending → vector delete → .rejected
+                    pending_path = self.cases_dir / f"{case_id}.md.rejected.pending"
+                    rejected_path = self.cases_dir / f"{case_id}.md.rejected"
+                    md_path.rename(pending_path)
+                    try:
+                        self.collection.delete(ids=[case_id])
+                    except Exception:
+                        pass
+                    pending_path.rename(rejected_path)
+        except FileLockTimeout:
+            raise MemoryBusyError("Memory is busy — another process is writing. Retry in a moment.")
+        _log.info("case verified", extra={"op": "verify", "case_id": case_id, "saved": correct})
         return True
 
     # ── Rebuild ────────────────────────────────────────────────────
@@ -325,14 +375,103 @@ class MemoryStore:
     def rebuild_index(self) -> int:
         """Rebuild the vector index from all Markdown files. Returns count of indexed cases."""
         md_files = list(self.cases_dir.glob("*.md"))
-        for md_path in md_files:
-            case = _markdown_to_case(md_path)
-            if case:
-                self._save_to_vector(case)
+        try:
+            with self._lock:
+                for md_path in md_files:
+                    case = _markdown_to_case(md_path)
+                    if case:
+                        self._save_to_vector(case)
+        except FileLockTimeout:
+            raise MemoryBusyError("Memory is busy — another process is writing. Retry in a moment.")
         return len(md_files)
 
+    # ── Reconciliation ────────────────────────────────────────────
 
-# ── Markdown ↔ BugCase serialization ───────────────────────────────
+    def _cleanup_stale_tmps(self) -> int:
+        """Remove .tmp files older than 10 minutes. Returns count removed."""
+        import time
+        now = time.time()
+        removed = 0
+        for tmp in self.cases_dir.glob("*.tmp"):
+            try:
+                age = now - tmp.stat().st_mtime
+                if age > 600:
+                    tmp.unlink()
+                    removed += 1
+            except OSError:
+                pass
+        # Also clean up .pending files older than 10 min
+        for pending in self.cases_dir.glob("*.pending"):
+            try:
+                age = now - pending.stat().st_mtime
+                if age > 600:
+                    pending.unlink()
+                    removed += 1
+            except OSError:
+                pass
+        return removed
+
+    def doctor(self, fix: bool = False, delete_orphans: bool = False) -> dict:
+        """Diagnose and optionally fix inconsistencies between markdown and vector store.
+
+        Returns dict with counts of issues found and fixed.
+        """
+        md_ids = {p.stem for p in self.cases_dir.glob("*.md")}
+
+        # Get all vector IDs
+        all_ids = set()
+        count = self.collection.count()
+        if count > 0:
+            results = self.collection.get(include=[], limit=count)
+            all_ids = set(results["ids"])
+
+        missing_vectors = md_ids - all_ids
+        orphan_vectors = all_ids - md_ids
+
+        # Check for .pending files (incomplete verify(correct=False))
+        pending_fixes = []
+        for pending in self.cases_dir.glob("*.rejected.pending"):
+            case_id = pending.stem.replace(".md", "").replace(".rejected", "")
+            rejected_path = self.cases_dir / f"{case_id}.md.rejected"
+            pending_fixes.append({
+                "case_id": case_id,
+                "pending_path": str(pending),
+                "target_path": str(rejected_path),
+            })
+            if fix:
+                pending.rename(rejected_path)
+
+        fixed_missing = 0
+        if fix and missing_vectors:
+            for case_id in missing_vectors:
+                md_path = self.cases_dir / f"{case_id}.md"
+                case = _markdown_to_case(md_path)
+                if case:
+                    try:
+                        self._save_to_vector(case)
+                        fixed_missing += 1
+                    except Exception:
+                        pass
+
+        deleted_orphans = 0
+        if fix and delete_orphans and orphan_vectors:
+            for case_id in orphan_vectors:
+                try:
+                    self.collection.delete(ids=[case_id])
+                    deleted_orphans += 1
+                except Exception:
+                    pass
+
+        result = {
+            "missing_vectors": len(missing_vectors),
+            "orphan_vectors": len(orphan_vectors),
+            "pending_rejected": len(pending_fixes),
+            "fixed_missing": fixed_missing,
+            "deleted_orphans": deleted_orphans,
+            "fixed_pending": len(pending_fixes) if fix else 0,
+        }
+        _log.info("doctor check", extra={"op": "doctor", **result})
+        return result
 
 def _case_to_markdown(case: BugCase) -> str:
     """Serialize a BugCase to a human-readable Markdown file."""

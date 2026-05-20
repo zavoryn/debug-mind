@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import json
 import os
+import time
+import uuid
 from typing import Any, Generator
 
 import anthropic
@@ -21,6 +23,31 @@ from debug_mind.schemas import BugCase, DiagnosisResult, Severity, BugStatus
 from debug_mind.memory.store import MemoryStore
 from debug_mind.skills.codebase import search_code, read_file, list_project_structure
 from debug_mind.tools.schemas import MEMORY_TOOLS as _MEMORY_TOOLS, CODEBASE_TOOLS as _CODEBASE_TOOLS
+from debug_mind.budget import TokenBudget
+from debug_mind.observability.logger import get_logger, _try_otel_span
+from debug_mind.sanitize import sanitize_bug_input
+
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
+
+_log = get_logger("agent")
+
+# Retryable API errors: rate limits (429), server errors (5xx), connection issues
+_RETRYABLE = (
+    anthropic.RateLimitError,
+    anthropic.APIStatusError,  # we'll check status_code in predicate
+    anthropic.APIConnectionError,
+)
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    """Return True for 429, 5xx, and connection errors. Not for 400/401/403."""
+    if isinstance(exc, anthropic.RateLimitError):
+        return True
+    if isinstance(exc, anthropic.APIConnectionError):
+        return True
+    if isinstance(exc, anthropic.APIStatusError):
+        return exc.status_code >= 500
+    return False
 
 SYSTEM_PROMPT = """You are DebugMind, an expert bug diagnosis agent with access to:
 1. **Experiential Memory** — a knowledge base of past bug diagnoses.
@@ -60,12 +87,26 @@ class DiagnosticAgent:
         project_path: str | None = None,
         model: str = "claude-sonnet-4-20250514",
         api_key: str | None = None,
+        budget: TokenBudget | None = None,
+        no_retry: bool = False,
     ):
         self.memory = memory
         self.project_path = project_path
         self.model = model
+        self.budget = budget
+        self.no_retry = no_retry
         self.client = anthropic.Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
         self.tools = MEMORY_TOOLS + (CODEBASE_TOOLS if project_path else [])
+
+    @retry(
+        retry=retry_if_exception(_is_retryable),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=2, min=2, max=30),
+        reraise=True,
+    )
+    def _call_anthropic(self, **kwargs):
+        """Call Anthropic API with retry on transient errors (429, 5xx, connection)."""
+        return self.client.messages.create(**kwargs)
 
     def diagnose(
         self,
@@ -121,6 +162,15 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
         stream: bool = False,
     ) -> Generator[tuple[str, Any], None, None]:
         """Core ReAct loop shared by diagnose() and diagnose_stream()."""
+        trace_id = uuid.uuid4().hex[:16]
+        _log.info("diagnosis started", extra={"trace_id": trace_id})
+        _try_otel_span(trace_id)
+
+        # Sanitize inputs before building prompt
+        bug_description, error_log, environment, _ = sanitize_bug_input(
+            description=bug_description, error_log=error_log, environment=environment,
+        )
+
         user_message = self._build_user_message(bug_description, error_log, environment)
         messages: list[dict[str, Any]] = [{"role": "user", "content": user_message}]
         diagnosis_steps: list[str] = []
@@ -139,7 +189,8 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
                     else:
                         cached_tools.append(tool)
 
-                response = self.client.messages.create(
+                call_fn = self._call_anthropic if not self.no_retry else self.client.messages.create
+                response = call_fn(
                     model=self.model,
                     max_tokens=4096,
                     system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": cache_control}],
@@ -147,9 +198,37 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
                     messages=messages,
                 )
             except anthropic.APIError as e:
+                _log.warning("API error after retries", extra={"trace_id": trace_id, "error": str(e)})
                 if stream:
                     yield ("thinking", f"\n[API Error: {e.message}]")
-                break
+                # Save partial diagnosis with what we have
+                partial = self._build_partial_result(
+                    diagnosis_steps, saved_case_id, similar_case_ids,
+                    assistant_content=None, budget_reason=f"API error: {e.message}",
+                )
+                yield ("done", partial)
+                return
+
+            # Budget tracking
+            if self.budget and response.usage:
+                self.budget.record(response.usage)
+                _log.info("LLM response", extra={
+                    "trace_id": trace_id,
+                    "model": self.model,
+                    "tokens_in": getattr(response.usage, "input_tokens", 0),
+                    "tokens_out": getattr(response.usage, "output_tokens", 0),
+                })
+                exceeded, reason = self.budget.is_exceeded()
+                if exceeded:
+                    if stream:
+                        yield ("thinking", f"\n[Budget exceeded: {reason}]")
+                    # Save partial diagnosis before breaking
+                    partial = self._build_partial_result(
+                        diagnosis_steps, saved_case_id, similar_case_ids,
+                        assistant_content=None, budget_reason=reason,
+                    )
+                    yield ("done", partial)
+                    return
 
             assistant_content = response.content
             messages.append({"role": "assistant", "content": assistant_content})
@@ -169,7 +248,17 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
                 if stream:
                     yield ("tool_call", {"name": block.name, "input": block.input})
 
+                t0 = time.monotonic()
                 result, side_effect = self._execute_tool(block.name, block.input)
+                latency_ms = int((time.monotonic() - t0) * 1000)
+
+                _log.info("tool call", extra={
+                    "trace_id": trace_id,
+                    "tool": block.name,
+                    "latency_ms": latency_ms,
+                    "found": result.get("found") if isinstance(result, dict) else None,
+                    "saved": result.get("saved") if isinstance(result, dict) else None,
+                })
 
                 if stream:
                     yield ("tool_result", {"name": block.name, "result": result})
@@ -217,6 +306,50 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
 
         yield ("done", diag)
 
+    def _build_partial_result(
+        self,
+        diagnosis_steps: list[str],
+        saved_case_id: str | None,
+        similar_case_ids: list[str],
+        assistant_content: list | None,
+        budget_reason: str,
+    ) -> DiagnosisResult:
+        """Build a partial DiagnosisResult when budget is exceeded.
+
+        Saves what we have as UNRESOLVED so the user's money wasn't wasted.
+        """
+        final_text = ""
+        if assistant_content:
+            final_text = "\n".join(
+                b.text for b in assistant_content if hasattr(b, "text") and b.type == "text"
+            )
+
+        saved_case = self.memory.get(saved_case_id) if saved_case_id else None
+        reasoning = f"[Budget exceeded: {budget_reason}]\n{final_text}" if final_text else f"[Budget exceeded: {budget_reason}]"
+
+        if not saved_case and diagnosis_steps:
+            case = BugCase(
+                title="Partial diagnosis (budget exceeded)",
+                symptoms="Diagnosis interrupted by budget limit",
+                root_cause=final_text or "Incomplete — budget exceeded before root cause identified",
+                fix_suggestion="",
+                status=BugStatus.UNRESOLVED,
+                diagnosis_steps=diagnosis_steps,
+                similar_case_ids=similar_case_ids,
+            )
+            self.memory.save(case)
+            saved_case = case
+
+        return DiagnosisResult(
+            case_id=saved_case.id if saved_case else "unknown",
+            root_cause=saved_case.root_cause if saved_case else final_text,
+            confidence=0.0,
+            diagnosis_steps=diagnosis_steps,
+            fix_suggestion=saved_case.fix_suggestion if saved_case else "",
+            similar_cases_found=len(similar_case_ids),
+            reasoning=reasoning,
+        )
+
     def _execute_tool(self, name: str, params: dict) -> tuple[dict, str | None]:
         """Execute a single tool call. Returns (result, side_effect_tag)."""
         if name == "search_memory":
@@ -239,6 +372,7 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
             }, "search"
 
         elif name == "save_to_memory":
+            from debug_mind.sanitize import sanitize_tags, sanitize_error_log
             case = BugCase(
                 title=params["title"],
                 symptoms=params["symptoms"],
@@ -247,7 +381,7 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
                 fix_suggestion=params["fix_suggestion"],
                 severity=Severity(params.get("severity", "medium")),
                 status=BugStatus.ROOT_CAUSE_FOUND,
-                tags=params.get("tags", []),
+                tags=sanitize_tags(params.get("tags", [])),
                 environment=params.get("environment", {}),
                 diagnosis_steps=params.get("diagnosis_steps", []),
                 similar_case_ids=params.get("similar_case_ids", []),
