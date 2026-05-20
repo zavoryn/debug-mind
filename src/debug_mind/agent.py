@@ -1,6 +1,7 @@
 """Diagnostic Agent — the brain of DebugMind.
 
-Uses Claude with tool use to diagnose bugs. Two modes:
+Uses LLM with tool use to diagnose bugs via pluggable providers (Anthropic, OpenAI, etc.).
+Two modes:
   1. Full mode: connected to a real codebase, can search code, read files.
   2. Offline mode: only uses memory search — no codebase access.
 
@@ -17,8 +18,6 @@ import time
 import uuid
 from typing import Any, Generator
 
-import anthropic
-
 from debug_mind.schemas import BugCase, DiagnosisResult, Severity, BugStatus
 from debug_mind.memory.store import MemoryStore
 from debug_mind.skills.codebase import search_code, read_file, list_project_structure
@@ -29,28 +28,12 @@ from debug_mind.tools.schemas import (
 from debug_mind.budget import TokenBudget
 from debug_mind.observability.logger import get_logger, _try_otel_span
 from debug_mind.sanitize import sanitize_bug_input
+from debug_mind.providers.base import LLMProvider
+from debug_mind.providers.anthropic_provider import AnthropicProvider
 
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 
 _log = get_logger("agent")
-
-# Retryable API errors: rate limits (429), server errors (5xx), connection issues
-_RETRYABLE = (
-    anthropic.RateLimitError,
-    anthropic.APIStatusError,  # we'll check status_code in predicate
-    anthropic.APIConnectionError,
-)
-
-
-def _is_retryable(exc: BaseException) -> bool:
-    """Return True for 429, 5xx, and connection errors. Not for 400/401/403."""
-    if isinstance(exc, anthropic.RateLimitError):
-        return True
-    if isinstance(exc, anthropic.APIConnectionError):
-        return True
-    if isinstance(exc, anthropic.APIStatusError):
-        return exc.status_code >= 500
-    return False
 
 
 SYSTEM_PROMPT = """You are DebugMind, an expert bug diagnosis agent with access to:
@@ -89,28 +72,53 @@ class DiagnosticAgent:
         self,
         memory: MemoryStore,
         project_path: str | None = None,
-        model: str = "claude-sonnet-4-20250514",
+        model: str | None = None,
         api_key: str | None = None,
+        provider: LLMProvider | None = None,
         budget: TokenBudget | None = None,
         no_retry: bool = False,
     ):
         self.memory = memory
         self.project_path = project_path
-        self.model = model
         self.budget = budget
         self.no_retry = no_retry
-        self.client = anthropic.Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
+        # Provider: explicit > env choice > default Anthropic
+        self.provider = provider or self._create_provider(api_key)
+        self.model = model or self.provider.default_model
         self.tools = MEMORY_TOOLS + (CODEBASE_TOOLS if project_path else [])
 
-    @retry(
-        retry=retry_if_exception(_is_retryable),
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=2, min=2, max=30),
-        reraise=True,
-    )
-    def _call_anthropic(self, **kwargs):
-        """Call Anthropic API with retry on transient errors (429, 5xx, connection)."""
-        return self.client.messages.create(**kwargs)
+    def _create_provider(self, api_key: str | None) -> LLMProvider:
+        """Create provider based on DEBUG_MIND_PROVIDER env or default to Anthropic."""
+        choice = os.environ.get("DEBUG_MIND_PROVIDER", "anthropic").lower()
+        if choice == "openai":
+            from debug_mind.providers.openai_provider import OpenAIProvider
+
+            return OpenAIProvider(api_key=api_key or os.environ.get("OPENAI_API_KEY"))
+        return AnthropicProvider(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
+
+    def _create_retry_decorator(self):
+        """Build a retry decorator using the provider's is_retryable method."""
+        _provider = self.provider
+
+        def _is_retryable(exc: BaseException) -> bool:
+            return _provider.is_retryable(exc)
+
+        return retry(
+            retry=retry_if_exception(_is_retryable),
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=2, min=2, max=30),
+            reraise=True,
+        )
+
+    def _call_provider(self, **kwargs):
+        """Call the LLM provider with retry on transient errors."""
+        retry_decorator = self._create_retry_decorator()
+
+        @retry_decorator
+        def _do_call():
+            return self.provider.create_message(**kwargs)
+
+        return _do_call()
 
     def diagnose(
         self,
@@ -197,7 +205,7 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
                     else:
                         cached_tools.append(tool)
 
-                call_fn = self._call_anthropic if not self.no_retry else self.client.messages.create
+                call_fn = self._call_provider if not self.no_retry else self.provider.create_message
                 response = call_fn(
                     model=self.model,
                     max_tokens=4096,
@@ -207,19 +215,19 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
                     tools=cached_tools,
                     messages=messages,
                 )
-            except anthropic.APIError as e:
+            except Exception as e:
                 _log.warning(
                     "API error after retries", extra={"trace_id": trace_id, "error": str(e)}
                 )
                 if stream:
-                    yield ("thinking", f"\n[API Error: {e.message}]")
+                    yield ("thinking", f"\n[API Error: {e}]")
                 # Save partial diagnosis with what we have
                 partial = self._build_partial_result(
                     diagnosis_steps,
                     saved_case_id,
                     similar_case_ids,
                     assistant_content=None,
-                    budget_reason=f"API error: {e.message}",
+                    budget_reason=f"API error: {e}",
                 )
                 yield ("done", partial)
                 return

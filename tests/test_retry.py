@@ -51,7 +51,7 @@ class TestRetryOnTransientErrors:
         )
         success = _make_response("Final answer")
 
-        with patch.object(agent.client.messages, "create", side_effect=[rlimit1, rlimit2, success]):
+        with patch.object(agent.provider, "create_message", side_effect=[rlimit1, rlimit2, success]):
             result = agent.diagnose("test bug")
 
         assert result.root_cause == "Final answer"
@@ -65,7 +65,7 @@ class TestRetryOnTransientErrors:
             message="internal error", response=_mock_response(500), body=None
         )
 
-        with patch.object(agent.client.messages, "create", side_effect=[err, err, err]):
+        with patch.object(agent.provider, "create_message", side_effect=[err, err, err]):
             result = agent.diagnose("test bug")
 
         assert result.confidence == 0.0
@@ -79,7 +79,7 @@ class TestRetryOnTransientErrors:
             message="invalid key", response=_mock_response(401), body=None
         )
         mock_create = MagicMock(side_effect=err)
-        with patch.object(agent.client.messages, "create", mock_create):
+        with patch.object(agent.provider, "create_message", mock_create):
             _ = agent.diagnose("test bug")
 
         assert mock_create.call_count == 1
@@ -94,7 +94,7 @@ class TestRetryOnTransientErrors:
         )
         mock_create = MagicMock(side_effect=err)
 
-        with patch.object(agent.client.messages, "create", mock_create):
+        with patch.object(agent.provider, "create_message", mock_create):
             _ = agent.diagnose("test bug")
 
         assert mock_create.call_count == 1
@@ -111,7 +111,7 @@ class TestRetryOnTransientErrors:
             message="server error", response=_mock_response(500), body=None
         )
 
-        with patch.object(agent.client.messages, "create", side_effect=[search_response, err]):
+        with patch.object(agent.provider, "create_message", side_effect=[search_response, err]):
             with patch.object(
                 agent, "_execute_tool", return_value=({"found": 0, "cases": []}, "search")
             ):

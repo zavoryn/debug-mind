@@ -150,7 +150,7 @@ class TestBudgetIntegration:
             agent = DiagnosticAgent(memory=store, budget=budget, api_key="fake-key")
 
             with patch.object(
-                agent.client.messages, "create", side_effect=[response_1, response_2]
+                agent.provider, "create_message", side_effect=[response_1, response_2]
             ):
                 with patch.object(agent, "_execute_tool", return_value=({"found": 0}, "search")):
                     result = agent.diagnose("test bug")
