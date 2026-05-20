@@ -61,7 +61,9 @@ class TestDatasetLoading:
                 f"Too few root_cause keywords in {c.id}"
             )
             assert len(c.expected_fix_keywords) >= 2, f"Too few fix keywords in {c.id}"
-            assert len(c.seed_case_ids) >= 1, f"No seed_case_ids in {c.id}"
+            assert c.synthetic or len(c.seed_case_ids) >= 1, (
+                f"No seed_case_ids in non-synthetic case {c.id}"
+            )
 
     def test_seed_cases_dir_exists_and_has_files(self):
         assert SEED_CASES_DIR.exists()

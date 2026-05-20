@@ -135,7 +135,7 @@ class TestCodebaseSkills:
     def test_list_project_structure(self, project_path):
         from debug_mind.skills.codebase import list_project_structure
 
-        result = list_project_structure(project_path, depth=2)
+        result = list_project_structure(project_path, depth=2, max_entries=200)
         assert "structure" in result
         assert "pyproject.toml" in result["structure"]
         assert "src/" in result["structure"]
