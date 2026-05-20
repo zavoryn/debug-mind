@@ -444,6 +444,14 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
                 end_line=params.get("end_line", 100),
             ), None
 
+        elif name == "parse_symbols" and self.project_path:
+            from debug_mind.skills.parser import parse_symbols
+
+            return parse_symbols(
+                project_path=self.project_path,
+                file_path=params["file_path"],
+            ), "code"
+
         elif name == "list_project_structure" and self.project_path:
             return list_project_structure(
                 project_path=self.project_path,

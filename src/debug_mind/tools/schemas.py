@@ -104,6 +104,20 @@ CODEBASE_TOOLS = [
             },
         },
     },
+    {
+        "name": "parse_symbols",
+        "description": "Parse a source file and list its top-level symbols (functions, classes). Requires tree-sitter.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "Relative path to the source file from project root",
+                },
+            },
+            "required": ["file_path"],
+        },
+    },
 ]
 
 

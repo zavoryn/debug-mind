@@ -506,6 +506,42 @@ def serve():
 
 
 @main.command()
+@click.option("--port", "-p", default=7860, help="Port to listen on (default 7860)")
+@click.option("--share", is_flag=True, help="Create a public share link")
+def web(port: int, share: bool):
+    """Launch the Gradio web UI."""
+    from debug_mind.web import launch_ui
+
+    launch_ui(port=port, share=share)
+
+
+@main.command()
+def plugins():
+    """List loaded plugins from DEBUG_MIND_PLUGINS."""
+    from debug_mind.plugins import discover_plugins
+
+    loaded, registry = discover_plugins()
+    if not loaded:
+        console.print("No plugins loaded. Set DEBUG_MIND_PLUGINS env var to load plugins.")
+        return
+
+    console.print(f"[bold]Loaded {len(loaded)} plugin(s):[/bold]")
+    for p in loaded:
+        console.print(f"  - {p}")
+
+    if registry.tools:
+        console.print(f"\n[bold]Custom tools:[/bold] {len(registry.tools)}")
+        for t in registry.tools:
+            console.print(f"  - {t['name']}")
+
+    if registry.embedding_fns:
+        console.print(f"\n[bold]Custom embeddings:[/bold] {', '.join(registry.embedding_fns)}")
+
+    if registry.reranker_fns:
+        console.print(f"\n[bold]Custom rerankers:[/bold] {', '.join(registry.reranker_fns)}")
+
+
+@main.command()
 @click.option("--since", default="24h", help="Time range: 1h, 24h, 7d (default 24h)")
 @click.option("--op", default=None, help="Filter by operation: save, verify, delete, mark_used")
 def audit(since: str, op: str | None):
