@@ -1,12 +1,12 @@
 """Memory Store — the core of DebugMind's experiential memory.
 
-Hybrid storage: ChromaDB for vector similarity search + Markdown files for
-human-readable persistence and git-based knowledge sharing.
+Hybrid storage: pluggable vector backend (ChromaDB or SQLite) + Markdown
+files for human-readable persistence and git-based knowledge sharing.
 
 Design decisions:
-- ChromaDB is embedded (zero infra) and uses a local embedding model by default.
-- Every write goes to both ChromaDB and a Markdown file.
-- Markdown is the source of truth — ChromaDB can be rebuilt from it.
+- ChromaDB is the default backend; set DEBUG_MIND_BACKEND=sqlite to switch.
+- Every write goes to both the vector backend and a Markdown file.
+- Markdown is the source of truth — the backend can be rebuilt from it.
 """
 
 from __future__ import annotations
@@ -18,8 +18,6 @@ import re
 from pathlib import Path
 from datetime import datetime, timezone
 
-import chromadb
-
 from filelock import FileLock, Timeout as FileLockTimeout
 
 from debug_mind.schemas import BugCase, SearchResult, MemoryStats, Severity, BugStatus
@@ -27,7 +25,6 @@ from debug_mind.observability.logger import get_logger
 
 _log = get_logger("memory")
 
-COLLECTION_NAME = "bug_cases"
 DEFAULT_MEMORY_DIR = Path(os.environ.get("DEBUG_MIND_MEMORY_DIR", "memory"))
 DEDUP_THRESHOLD = float(os.environ.get("DEBUG_MIND_DEDUP_THRESHOLD", "0.92"))
 HIT_COUNT_WEIGHT = float(os.environ.get("DEBUG_MIND_HIT_COUNT_WEIGHT", "0.05"))
@@ -50,21 +47,33 @@ class MemoryStore:
         self.cases_dir = self.memory_dir / "cases"
         self.cases_dir.mkdir(parents=True, exist_ok=True)
         self.reranker = reranker
+        self._embedding_fn = embedding_fn
 
         self._lock = FileLock(str(self.memory_dir / ".lock"), timeout=30)
 
-        self.client = chromadb.PersistentClient(path=str(self.memory_dir / "chroma"))
-
-        collection_kwargs: dict = {
-            "name": COLLECTION_NAME,
-            "metadata": {"hnsw:space": "cosine"},
-        }
-        if embedding_fn is not None:
-            collection_kwargs["embedding_function"] = embedding_fn
-
-        self.collection = self.client.get_or_create_collection(**collection_kwargs)
+        self.backend = self._create_backend()
+        self.backend.initialize()
 
         self._cleanup_stale_tmps()
+
+    def _create_backend(self):
+        backend_choice = os.environ.get("DEBUG_MIND_BACKEND", "chroma").lower()
+        if backend_choice == "sqlite":
+            from debug_mind.memory.backends.sqlite_backend import SQLiteBackend
+
+            return SQLiteBackend(self.memory_dir)
+        from debug_mind.memory.backends.chroma_backend import ChromaBackend
+
+        return ChromaBackend(self.memory_dir)
+
+    def _embed(self, texts: list[str]) -> list[list[float]]:
+        """Embed one or more texts, returning a list of embedding vectors."""
+        if self._embedding_fn is not None:
+            return self._embedding_fn(texts)
+        from debug_mind.memory.embeddings import default_embedding
+
+        fn = default_embedding()
+        return fn(texts)
 
     # ── Write ──────────────────────────────────────────────────────
 
@@ -112,23 +121,20 @@ class MemoryStore:
         Only merges against verified cases — unverified cases are kept separate
         to preserve diversity (wrong diagnoses may look similar to correct ones).
         """
-        count = self.collection.count()
+        count = self.backend.count()
         if count == 0:
             return None
 
         query_text = case.to_search_text()
-        results = self.collection.query(
-            query_texts=[query_text],
-            n_results=min(3, count),
-            include=["documents", "metadatas", "distances"],
-        )
+        embedding = self._embed([query_text])[0]
+        results = self.backend.search(embedding, min(3, count))
 
-        if not results["ids"] or not results["ids"][0]:
+        if not results:
             return None
 
-        for i, case_id in enumerate(results["ids"][0]):
-            distance = results["distances"][0][i]
-            score = 1 - distance
+        for entry in results:
+            case_id = entry["id"]
+            score = entry["score"]
             if score < DEDUP_THRESHOLD:
                 continue
 
@@ -156,6 +162,7 @@ class MemoryStore:
 
     def _save_to_vector(self, case: BugCase) -> None:
         search_text = case.to_search_text()
+        embedding = self._embed([search_text])[0]
         metadata = {
             "severity": case.severity.value,
             "status": case.status.value,
@@ -163,9 +170,9 @@ class MemoryStore:
             "created_at": case.created_at.isoformat(),
         }
 
-        self.collection.upsert(
+        self.backend.upsert(
             ids=[case.id],
-            documents=[search_text],
+            embeddings=[embedding],
             metadatas=[metadata],
         )
 
@@ -197,25 +204,22 @@ class MemoryStore:
         for verified, score * 0.7 for unverified), but the returned score field
         contains the original cosine similarity for evaluation transparency.
         """
-        count = self.collection.count()
+        count = self.backend.count()
         if count == 0:
             return []
 
         # Fetch more candidates to allow for reranking
         fetch_k = min(top_k * 3, count)
-        results = self.collection.query(
-            query_texts=[query],
-            n_results=fetch_k,
-            include=["documents", "metadatas", "distances"],
-        )
+        embedding = self._embed([query])[0]
+        backend_results = self.backend.search(embedding, fetch_k)
 
-        search_results = []
-        if not results["ids"] or not results["ids"][0]:
-            return search_results
+        search_results: list[tuple[BugCase, float]] = []
+        if not backend_results:
+            return []
 
-        for i, case_id in enumerate(results["ids"][0]):
-            distance = results["distances"][0][i]
-            score = 1 - distance  # cosine distance → similarity
+        for entry in backend_results:
+            case_id = entry["id"]
+            score = entry["score"]
 
             if score < min_score:
                 continue
@@ -308,7 +312,7 @@ class MemoryStore:
             with self._lock:
                 md_path.unlink()
                 try:
-                    self.collection.delete(ids=[case_id])
+                    self.backend.delete(ids=[case_id])
                 except Exception:
                     pass
         except FileLockTimeout:
@@ -366,7 +370,7 @@ class MemoryStore:
                     rejected_path = self.cases_dir / f"{case_id}.md.rejected"
                     md_path.rename(pending_path)
                     try:
-                        self.collection.delete(ids=[case_id])
+                        self.backend.delete(ids=[case_id])
                     except Exception:
                         pass
                     pending_path.rename(rejected_path)
@@ -426,10 +430,9 @@ class MemoryStore:
 
         # Get all vector IDs
         all_ids = set()
-        count = self.collection.count()
+        count = self.backend.count()
         if count > 0:
-            results = self.collection.get(include=[], limit=count)
-            all_ids = set(results["ids"])
+            all_ids = set(self.backend.get_all_ids())
 
         missing_vectors = md_ids - all_ids
         orphan_vectors = all_ids - md_ids
@@ -465,7 +468,7 @@ class MemoryStore:
         if fix and delete_orphans and orphan_vectors:
             for case_id in orphan_vectors:
                 try:
-                    self.collection.delete(ids=[case_id])
+                    self.backend.delete(ids=[case_id])
                     deleted_orphans += 1
                 except Exception:
                     pass
