@@ -200,6 +200,39 @@ class TestEvalRunner:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+# ── Lexical scoring ───────────────────────────────────────────────────
+
+
+class TestLexicalScoring:
+    def test_search_uses_lexical_signal_when_vector_scores_are_weak(self, tmp_path):
+        def flat_embed(texts: list[str]):
+            return [[1.0, 0.0, 0.0] for _ in texts]
+
+        store = MemoryStore(memory_dir=tmp_path / "mem", embedding_fn=flat_embed)
+        target = BugCase(
+            id="redis-target",
+            title="Redis pool exhaustion",
+            symptoms="NPE when Redis connection pool exhausted",
+            root_cause="Redis connection pool max-active too small",
+            fix_suggestion="Increase max-active and add null check",
+            tags=["redis", "pool", "npe"],
+        )
+        distractor = BugCase(
+            id="docker-distractor",
+            title="Docker DNS cache issue",
+            symptoms="Container cannot resolve service name",
+            root_cause="Stale Docker DNS cache",
+            fix_suggestion="Restart network and avoid fixed resolver cache",
+            tags=["docker", "dns"],
+        )
+        store.save(target)
+        store.save(distractor)
+
+        results = store.search("redis pool npe max-active", top_k=2, min_score=0.0)
+
+        assert results[0].case.id == "redis-target"
+
+
 # ── CLI eval command ──────────────────────────────────────────────────
 
 

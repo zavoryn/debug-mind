@@ -240,6 +240,22 @@ class MemoryStore:
                 tmp_path.unlink()
             raise
 
+    # ── Lexical helpers ────────────────────────────────────────────
+
+    @staticmethod
+    def _tokenize_for_search(text: str) -> set[str]:
+        return {t for t in re.findall(r"[a-zA-Z0-9_+-]+", text.lower()) if len(t) >= 2}
+
+    @staticmethod
+    def _lexical_score(query: str, case: BugCase) -> float:
+        query_tokens = MemoryStore._tokenize_for_search(query)
+        if not query_tokens:
+            return 0.0
+        case_tokens = MemoryStore._tokenize_for_search(case.to_search_text())
+        if not case_tokens:
+            return 0.0
+        return len(query_tokens & case_tokens) / len(query_tokens)
+
     # ── Search ─────────────────────────────────────────────────────
 
     def search(
@@ -290,10 +306,12 @@ class MemoryStore:
 
         def effective_score(item: tuple[BugCase, float]) -> float:
             case, score = item
+            lexical = self._lexical_score(query, case)
+            blended = (score * 0.75) + (lexical * 0.25)
             verified_mult = 1.0 if case.verified else 0.7
             hc_mult = 1.0 + math.log1p(case.hit_count) * hc_weight if hc_weight > 0 else 1.0
             stale_mult = 0.5 if self._is_stale(case) else 1.0
-            return score * verified_mult * hc_mult * stale_mult
+            return blended * verified_mult * hc_mult * stale_mult
 
         search_results.sort(key=effective_score, reverse=True)
         result_list = [SearchResult(case=case, score=score) for case, score in search_results]
