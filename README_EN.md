@@ -86,6 +86,14 @@ DebugMind has **four layers**, each independently useful:
 # Install
 pip install -e .
 
+# Optional: OpenAI compatible provider
+pip install -e ".[openai]"
+DEBUG_MIND_PROVIDER=openai OPENAI_API_KEY=your-key debug-mind diagnose "..."
+
+# Optional: custom embedding models
+pip install -e ".[embeddings]"
+DEBUG_MIND_EMBEDDING=openai debug-mind rebuild
+
 # Create .env with your API key
 echo "ANTHROPIC_API_KEY=your-key-here" > .env
 

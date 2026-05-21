@@ -86,6 +86,14 @@ DebugMind 有 **四层架构**，每一层都可独立使用：
 # 安装
 pip install -e .
 
+# 如需 OpenAI 兼容提供者（可选）
+pip install -e ".[openai]"
+DEBUG_MIND_PROVIDER=openai OPENAI_API_KEY=your-key debug-mind diagnose "..."
+
+# 如需自定义嵌入模型（可选）
+pip install -e ".[embeddings]"
+DEBUG_MIND_EMBEDDING=openai debug-mind rebuild
+
 # 创建 .env 文件，填入你的 API Key
 echo "ANTHROPIC_API_KEY=your-key-here" > .env
 
