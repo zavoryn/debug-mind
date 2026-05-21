@@ -52,7 +52,7 @@ all = [
 debug-mind = "debug_mind.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/debug_mind"]
+packages = ["src/debug_mind", "evaluation"]
 
 [tool.ruff]
 line-length = 100
