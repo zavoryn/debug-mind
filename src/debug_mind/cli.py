@@ -34,7 +34,7 @@ from rich.table import Table
 from rich.text import Text
 
 from debug_mind.memory.store import MemoryStore, MemoryBusyError
-from debug_mind.schemas import DiagnosisResult
+from debug_mind.schemas import BugCase, DiagnosisResult
 
 
 def _cli_audit(memory: MemoryStore, op: str, case_id: str, **details) -> None:
