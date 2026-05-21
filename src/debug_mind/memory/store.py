@@ -30,6 +30,13 @@ DEDUP_THRESHOLD = float(os.environ.get("DEBUG_MIND_DEDUP_THRESHOLD", "0.92"))
 HIT_COUNT_WEIGHT = float(os.environ.get("DEBUG_MIND_HIT_COUNT_WEIGHT", "0.05"))
 
 
+def _as_float_list(vector) -> list[float]:
+    """Convert numpy/list-like embedding outputs into JSON-safe floats."""
+    if hasattr(vector, "tolist"):
+        vector = vector.tolist()
+    return [float(v) for v in vector]
+
+
 def _fallback_embed(texts: list[str]) -> list[list[float]]:
     """Deterministic fallback embedding using character trigram hashing.
 
@@ -101,7 +108,7 @@ class MemoryStore:
     def _embed(self, texts: list[str]) -> list[list[float]]:
         """Embed one or more texts, returning a list of embedding vectors."""
         if self._embedding_fn is not None:
-            return self._embedding_fn(texts)
+            return [_as_float_list(v) for v in self._embedding_fn(texts)]
         if self._cached_embed_fn is None:
             from debug_mind.memory.embeddings import default_embedding
 
@@ -113,9 +120,10 @@ class MemoryStore:
                 )
                 self._cached_embed_fn = _fallback_embed
         try:
-            return self._cached_embed_fn(texts)
+            vectors = self._cached_embed_fn(texts)
         except Exception:
-            return _fallback_embed(texts)
+            vectors = _fallback_embed(texts)
+        return [_as_float_list(v) for v in vectors]
 
     # ── Write ──────────────────────────────────────────────────────
 

@@ -25,6 +25,12 @@ class SQLiteBackend:
         self._db_path = memory_dir / "sqlite" / "cases.db"
         self._conn: sqlite3.Connection | None = None
 
+    @staticmethod
+    def _json_safe_embedding(embedding) -> list[float]:
+        if hasattr(embedding, "tolist"):
+            embedding = embedding.tolist()
+        return [float(v) for v in embedding]
+
     def initialize(self) -> None:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self._db_path))
@@ -66,7 +72,7 @@ class SQLiteBackend:
     ) -> None:
         conn = self._ensure_conn()
         for i, doc_id in enumerate(ids):
-            emb_json = json.dumps(embeddings[i])
+            emb_json = json.dumps(self._json_safe_embedding(embeddings[i]))
             meta_json = json.dumps(metadatas[i])
             conn.execute(
                 "INSERT OR REPLACE INTO cases (id, embedding, metadata) VALUES (?, ?, ?)",
