@@ -694,7 +694,10 @@ def audit(since: str, op: str | None):
 @click.option("--search-only", is_flag=True, help="Only evaluate retrieval, no API key needed")
 @click.option("--case", "case_id", default="", help="Run a single benchmark case by ID")
 @click.option("--json", "json_path", default="", help="Write machine-readable results to file")
-def eval(search_only: bool, case_id: str, json_path: str):
+@click.option(
+    "--min-hit-at-5", default=None, type=float, help="Fail if hit@5 is below this threshold"
+)
+def eval(search_only: bool, case_id: str, json_path: str, min_hit_at_5: float | None):
     """Evaluate memory retrieval quality against benchmark dataset."""
     from evaluation.dataset import load_all_cases, load_case
     from evaluation.benchmark import run_eval, format_results
@@ -718,6 +721,12 @@ def eval(search_only: bool, case_id: str, json_path: str):
 
     console.print()
     console.print(format_results(result))
+
+    if min_hit_at_5 is not None and result.hit_at_5 < min_hit_at_5:
+        console.print(
+            f"[red]hit@5 below threshold: {result.hit_at_5:.2f} < {min_hit_at_5:.2f}[/red]"
+        )
+        sys.exit(1)
 
     if json_path:
         import json as _json

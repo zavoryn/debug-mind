@@ -204,12 +204,26 @@ class TestEvalRunner:
 
 
 class TestEvalCLI:
-    def test_eval_search_only_no_api_key(self):
+    @pytest.fixture
+    def runner(self):
+        return CliRunner(env={"ANTHROPIC_API_KEY": ""})
+
+    def test_eval_search_only_no_api_key(self, runner):
         """eval --search-only should work without ANTHROPIC_API_KEY."""
-        runner = CliRunner(env={"ANTHROPIC_API_KEY": ""})
         result = runner.invoke(main, ["eval", "--search-only"])
         assert result.exit_code == 0, result.output
         assert "Overall" in result.output
+
+    def test_eval_cli_fails_when_hit_at_5_below_threshold(self, runner):
+        result = runner.invoke(main, ["eval", "--search-only", "--min-hit-at-5", "1.0"])
+
+        assert result.exit_code != 0
+        assert "hit@5 below threshold" in result.output
+
+    def test_eval_cli_passes_when_hit_at_5_above_threshold(self, runner):
+        result = runner.invoke(main, ["eval", "--search-only", "--min-hit-at-5", "0.0"])
+
+        assert result.exit_code == 0
 
     def test_eval_single_case(self):
         runner = CliRunner(env={"ANTHROPIC_API_KEY": ""})

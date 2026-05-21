@@ -37,4 +37,4 @@ jobs:
         run: pytest -v --tb=short
 
       - name: Eval search-only
-        run: debug-mind eval --search-only
+        run: debug-mind eval --search-only --min-hit-at-5 0.20
