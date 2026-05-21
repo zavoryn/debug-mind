@@ -164,9 +164,9 @@ class TestCodebaseSkills:
     def test_search_code_finds_something(self, project_path):
         from debug_mind.skills.codebase import search_code
 
-        result = search_code("MemoryStore", project_path, file_type="py", max_results=50)
+        result = search_code("class MemoryStore", project_path, file_type="py", max_results=50)
         assert result.get("found", 0) > 0
-        assert any("store" in m["file"] for m in result.get("matches", []))
+        assert any("memory" in m["file"] and "store.py" in m["file"] for m in result["matches"])
 
     def test_read_file(self, project_path):
         from debug_mind.skills.codebase import read_file
