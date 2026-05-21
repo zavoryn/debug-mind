@@ -97,7 +97,7 @@ DEBUG_MIND_EMBEDDING=openai debug-mind rebuild
 # 创建 .env 文件，填入你的 API Key
 echo "ANTHROPIC_API_KEY=your-key-here" > .env
 
-# 诊断 Bug（结合代码库访问——真正的威力所在）
+# 诊断 Bug（结合代码库访问--优势）
 debug-mind diagnose --project /path/to/your/codebase \
   --log error.log \
   --env "java=17,framework=Spring Boot 3.2" \
