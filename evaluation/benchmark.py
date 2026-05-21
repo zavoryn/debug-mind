@@ -11,17 +11,15 @@ to avoid polluting the user's real memory.
 
 from __future__ import annotations
 
-import json
 import shutil
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
-from debug_mind.memory.store import MemoryStore, _case_to_markdown
+from debug_mind.memory.store import MemoryStore
 from debug_mind.schemas import BugCase, SearchResult
 
-from evaluation.dataset import BenchmarkCase, load_all_cases, load_case
+from evaluation.dataset import BenchmarkCase, load_all_cases
 
 SEED_CASES_DIR = Path(__file__).parent / "seed_cases"
 
@@ -129,8 +127,8 @@ def evaluate_case(
         rank = _find_rank(search_results, case.expected_top_hit_id)
         result.mrr = _compute_mrr(rank)
         result.hit_at_1 = rank == 1 if rank else False
-        result.hit_at_3 = (rank is not None and rank <= 3)
-        result.hit_at_5 = (rank is not None and rank <= 5)
+        result.hit_at_3 = rank is not None and rank <= 3
+        result.hit_at_5 = rank is not None and rank <= 5
 
     # Top hit for keyword recall
     top_result = search_results[0]
@@ -199,15 +197,9 @@ def run_eval(
 def format_results(result: EvalResult) -> str:
     """Format evaluation results as a human-readable table."""
     lines = []
-    lines.append(
-        "+---------------------+------+------+-------+-------+------+"
-    )
-    lines.append(
-        "| Case                | hit@1| hit@3| hit@5 | MRR   |  KW  |"
-    )
-    lines.append(
-        "+---------------------+------+------+-------+-------+------+"
-    )
+    lines.append("+---------------------+------+------+-------+-------+------+")
+    lines.append("| Case                | hit@1| hit@3| hit@5 | MRR   |  KW  |")
+    lines.append("+---------------------+------+------+-------+-------+------+")
 
     for cr in result.case_results:
         h1 = "  Y  " if cr.hit_at_1 else "  -  "
@@ -219,16 +211,12 @@ def format_results(result: EvalResult) -> str:
         name = cr.case_id[:19].ljust(19)
         lines.append(f"| {name} |{h1}|{h3}|{h5} | {mrr} | {kw:>4} |")
 
-    lines.append(
-        "+---------------------+------+------+-------+-------+------+"
-    )
+    lines.append("+---------------------+------+------+-------+-------+------+")
     n = f"({result.total})"
     overall_label = f"Overall {n}".ljust(19)
     lines.append(
         f"| {overall_label} |{result.hit_at_1:.2f} | {result.hit_at_3:.2f} | {result.hit_at_5:.2f}  | {result.mrr:.2f}  | {result.keyword_recall:.2f} |"
     )
-    lines.append(
-        "+---------------------+------+------+-------+-------+------+"
-    )
+    lines.append("+---------------------+------+------+-------+-------+------+")
 
     return "\n".join(lines)

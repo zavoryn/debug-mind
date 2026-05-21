@@ -40,7 +40,9 @@ class BenchmarkCase(BaseModel):
     source: str | None = Field(default=None, description="Public URL to original bug report")
     synthetic: bool = Field(default=False, description="Whether this is a hand-crafted case")
     language: str | None = Field(default=None, description="Primary programming language")
-    category: str | None = Field(default=None, description="Error category (npe, oom, deadlock, etc.)")
+    category: str | None = Field(
+        default=None, description="Error category (npe, oom, deadlock, etc.)"
+    )
 
 
 def load_all_cases(cases_dir: Path | None = None) -> list[BenchmarkCase]:

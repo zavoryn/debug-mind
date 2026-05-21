@@ -167,8 +167,6 @@ class TestMarkUsed:
 class TestVerify:
     def test_verify_metadata_roundtrips(self, store: MemoryStore):
         """Verify count and last_verified_at should persist across reloads."""
-        from datetime import datetime, timezone
-
         case = _make_case(id="verify-meta")
         store.save(case)
 
