@@ -157,6 +157,7 @@ def run_eval(
 
     # Create isolated store
     tmp_dir = tempfile.mkdtemp(prefix="debug_mind_eval_")
+    store = None
     try:
         store = MemoryStore(memory_dir=Path(tmp_dir))
 
@@ -169,6 +170,8 @@ def run_eval(
             case_results.append(cr)
 
     finally:
+        if store is not None:
+            store.close()
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
     # Aggregate

@@ -510,6 +510,13 @@ class MemoryStore:
             raise MemoryBusyError("Memory is busy — another process is writing. Retry in a moment.")
         return len(md_files)
 
+    # ── Cleanup ──────────────────────────────────────────────────
+
+    def close(self) -> None:
+        close = getattr(self.backend, "close", None)
+        if callable(close):
+            close()
+
     # ── Reconciliation ────────────────────────────────────────────
 
     def _cleanup_stale_tmps(self) -> int:

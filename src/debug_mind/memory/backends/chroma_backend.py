@@ -72,6 +72,10 @@ class ChromaBackend(StorageBackend):
         results = self.collection.get(include=[], limit=count)
         return results.get("ids", [])
 
+    def close(self) -> None:
+        self._collection = None
+        self._client = None
+
     def rebuild(self) -> None:
         try:
             self._client.delete_collection(COLLECTION_NAME)

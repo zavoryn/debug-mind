@@ -125,6 +125,26 @@ class TestMarkdownRoundtrip:
         assert case.severity == Severity.HIGH
 
 
+class TestBackendLifecycle:
+    def test_memory_store_close_delegates_to_backend(self, tmp_path):
+        class Backend:
+            def __init__(self):
+                self.closed = False
+
+            def close(self):
+                self.closed = True
+
+        store = MemoryStore(
+            memory_dir=tmp_path / "mem", embedding_fn=lambda texts: [[1.0] for _ in texts]
+        )
+        backend = Backend()
+        store.backend = backend
+
+        store.close()
+
+        assert backend.closed is True
+
+
 class TestCodebaseSkills:
     """Test real code search and file reading against this project."""
 

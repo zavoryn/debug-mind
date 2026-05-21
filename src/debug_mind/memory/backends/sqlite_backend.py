@@ -92,6 +92,11 @@ class SQLiteBackend:
         rows = self._ensure_conn().execute("SELECT id FROM cases").fetchall()
         return [r[0] for r in rows]
 
+    def close(self) -> None:
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
+
     def rebuild(self) -> None:
         if self._conn:
             self._conn.close()

@@ -38,3 +38,7 @@ class StorageBackend(ABC):
     @abstractmethod
     def rebuild(self) -> None:
         """Delete the collection/table and recreate it (used by rebuild_index)."""
+
+    def close(self) -> None:
+        """Release backend resources. Backends with no resources may no-op."""
+        return None
