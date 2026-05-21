@@ -73,6 +73,14 @@ class ChromaBackend(StorageBackend):
         return results.get("ids", [])
 
     def close(self) -> None:
+        # Reset pointers so the next call reinitializes cleanly.
+        # ChromaDB PersistentClient flushes to disk on GC; calling stop()
+        # forces an immediate flush so the last writes survive process exit.
+        if self._client is not None:
+            try:
+                self._client.stop()
+            except Exception:
+                pass
         self._collection = None
         self._client = None
 

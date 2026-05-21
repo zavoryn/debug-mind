@@ -18,10 +18,11 @@ Auth: Set DEBUG_MIND_MCP_TOKEN to require authentication on write tools.
 
 from __future__ import annotations
 
+import collections
 import json
 import os
+import time
 import warnings
-from datetime import datetime, timezone
 from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
@@ -43,6 +44,22 @@ else:
         stacklevel=2,
     )
 
+# ── Rate limiting (write tools only) ──────────────────────────────────────────
+# Sliding-window counter: at most DEBUG_MIND_MCP_RATE_LIMIT writes per 60 s.
+_RATE_LIMIT = int(os.environ.get("DEBUG_MIND_MCP_RATE_LIMIT", "60"))
+_rate_window: collections.deque[float] = collections.deque()
+
+
+def _check_rate_limit() -> str | None:
+    """Return a JSON error string if the write rate limit is exceeded, else None."""
+    now = time.monotonic()
+    while _rate_window and now - _rate_window[0] > 60.0:
+        _rate_window.popleft()
+    if len(_rate_window) >= _RATE_LIMIT:
+        return json.dumps({"error": "rate_limit_exceeded", "retry_after_seconds": 60})
+    _rate_window.append(now)
+    return None
+
 
 def _get_memory() -> MemoryStore:
     global _memory
@@ -55,19 +72,15 @@ def _get_memory() -> MemoryStore:
 
 
 def _audit_log(op: str, case_id: str, actor: str = "mcp", **details) -> None:
-    """Append an audit entry to memory/audit.jsonl."""
-    mem = _get_memory()
-    audit_path = mem.memory_dir / "audit.jsonl"
-    audit_path.parent.mkdir(parents=True, exist_ok=True)
-    entry = {
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "actor": actor,
-        "op": op,
-        "case_id": case_id,
-        "details": details,
-    }
-    with open(audit_path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    from debug_mind.observability.audit import write_audit
+
+    write_audit(
+        _get_memory().memory_dir / "audit.jsonl",
+        op=op,
+        case_id=case_id,
+        actor=actor,
+        **details,
+    )
 
 
 def _check_auth(token: str | None) -> str | None:
@@ -183,6 +196,9 @@ def save_bug_case(
     err = _check_auth(auth_token)
     if err:
         return err
+    err = _check_rate_limit()
+    if err:
+        return err
 
     memory = _get_memory()
 
@@ -220,6 +236,9 @@ def delete_bug_case(case_id: str, auth_token: str = "") -> str:
     err = _check_auth(auth_token)
     if err:
         return err
+    err = _check_rate_limit()
+    if err:
+        return err
 
     memory = _get_memory()
     deleted = memory.delete(case_id)
@@ -237,6 +256,9 @@ def verify_bug_case(case_id: str, correct: bool, notes: str = "", auth_token: st
     the search index (soft delete — markdown file kept with .rejected suffix).
     """
     err = _check_auth(auth_token)
+    if err:
+        return err
+    err = _check_rate_limit()
     if err:
         return err
 

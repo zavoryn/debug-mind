@@ -38,21 +38,9 @@ from debug_mind.schemas import DiagnosisResult
 
 
 def _cli_audit(memory: MemoryStore, op: str, case_id: str, **details) -> None:
-    """Write audit log entry from CLI."""
-    audit_path = memory.memory_dir / "audit.jsonl"
-    audit_path.parent.mkdir(parents=True, exist_ok=True)
-    import json as _json
-    from datetime import datetime as _dt, timezone as _tz
+    from debug_mind.observability.audit import write_audit
 
-    entry = {
-        "ts": _dt.now(_tz.utc).isoformat(),
-        "actor": "cli",
-        "op": op,
-        "case_id": case_id,
-        "details": details,
-    }
-    with open(audit_path, "a", encoding="utf-8") as f:
-        f.write(_json.dumps(entry, ensure_ascii=False) + "\n")
+    write_audit(memory.memory_dir / "audit.jsonl", op=op, case_id=case_id, actor="cli", **details)
 
 
 # Load .env before anything else
@@ -70,9 +58,42 @@ def _get_memory() -> MemoryStore:
 
 @click.group()
 @click.version_option(version="0.1.0")
-def main():
+@click.pass_context
+def main(ctx: click.Context):
     """DebugMind — AI Bug Diagnosis Agent with Experiential Memory."""
-    pass
+    if ctx.invoked_subcommand not in (None, "serve", "web"):
+        _warn_invalid_env()
+
+
+_KNOWN_BACKENDS = {"chroma", "sqlite"}
+_KNOWN_EMBEDDINGS = {"default", "openai", "voyage", "bge"}
+_KNOWN_PROVIDERS = {"anthropic", "openai"}
+_KNOWN_LOG_FORMATS = {"text", "json"}
+
+
+def _warn_invalid_env() -> None:
+    """Emit warnings for obviously wrong DEBUG_MIND_* environment variable values."""
+    checks = [
+        ("DEBUG_MIND_BACKEND", os.environ.get("DEBUG_MIND_BACKEND"), _KNOWN_BACKENDS),
+        ("DEBUG_MIND_EMBEDDING", os.environ.get("DEBUG_MIND_EMBEDDING"), _KNOWN_EMBEDDINGS),
+        ("DEBUG_MIND_PROVIDER", os.environ.get("DEBUG_MIND_PROVIDER"), _KNOWN_PROVIDERS),
+        ("DEBUG_MIND_LOG_FORMAT", os.environ.get("DEBUG_MIND_LOG_FORMAT"), _KNOWN_LOG_FORMATS),
+    ]
+    for var, val, valid in checks:
+        if val is not None and val.lower() not in valid:
+            console.print(
+                f"[yellow]Warning:[/yellow] {var}={val!r} is not recognised. "
+                f"Valid values: {', '.join(sorted(valid))}"
+            )
+    for float_var in ("DEBUG_MIND_MAX_COST", "DEBUG_MIND_DEDUP_THRESHOLD", "DEBUG_MIND_HIT_COUNT_WEIGHT"):
+        raw = os.environ.get(float_var)
+        if raw is not None:
+            try:
+                float(raw)
+            except ValueError:
+                console.print(
+                    f"[yellow]Warning:[/yellow] {float_var}={raw!r} — expected a number, got a string."
+                )
 
 
 @main.command()
@@ -204,9 +225,10 @@ def _stream_diagnose(agent, description: str, error_log: str, environment: dict)
 
     thinking_parts: list[str] = []
     tool_lines: list[str] = []
+    turn_header = Text("")
 
     def _render():
-        parts = []
+        parts = [turn_header]
         if tool_lines:
             parts.append(Text("\n".join(tool_lines), style="dim cyan"))
         if thinking_parts:
@@ -222,7 +244,12 @@ def _stream_diagnose(agent, description: str, error_log: str, environment: dict)
             error_log=error_log,
             environment=environment,
         ):
-            if event_type == "thinking":
+            if event_type == "turn":
+                turn_header.plain = f"[Turn {data['turn']}/{data['max_turns']}]"
+                turn_header.stylize("bold dim")
+                live.update(_render())
+
+            elif event_type == "thinking":
                 thinking_parts.append(data)
                 live.update(_render())
 
@@ -791,6 +818,89 @@ def doctor(fix: bool, delete_orphans: bool):
         console.print(
             "[dim]Run with --fix to repair, add --delete-orphans to remove orphan vectors.[/dim]"
         )
+
+
+@main.command(name="export")
+@click.option(
+    "--output", "-o", default="debug-mind-export.json", show_default=True, help="Output file path"
+)
+@click.option("--limit", "-n", default=0, type=int, help="Max cases (0 = all)")
+def export_cases(output: str, limit: int):
+    """Export all memory cases to a JSON file for backup or sharing.
+
+    The exported file can be imported on another machine with 'debug-mind import'.
+    """
+    import json as _json
+
+    memory = _get_memory()
+    n = limit if limit > 0 else 999_999
+    cases = memory.list_recent(limit=n)
+
+    if not cases:
+        console.print("[yellow]Memory is empty — nothing to export.[/yellow]")
+        return
+
+    payload = {
+        "version": 1,
+        "exported_at": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+        "cases": [c.model_dump(mode="json") for c in cases],
+    }
+    Path(output).write_text(_json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    console.print(f"[green]Exported {len(cases)} case(s) to {output}[/green]")
+
+
+@main.command(name="import")
+@click.argument("input_file")
+@click.option("--skip-existing", is_flag=True, help="Skip cases whose ID already exists")
+@click.option("--dry-run", is_flag=True, help="Show what would be imported without writing")
+def import_cases(input_file: str, skip_existing: bool, dry_run: bool):
+    """Import memory cases from a JSON file produced by 'debug-mind export'.
+
+    By default existing cases are overwritten. Use --skip-existing to keep them.
+    """
+    import json as _json
+
+    src = Path(input_file)
+    if not src.exists():
+        console.print(f"[red]File not found: {input_file}[/red]")
+        sys.exit(1)
+
+    try:
+        payload = _json.loads(src.read_text(encoding="utf-8"))
+    except _json.JSONDecodeError as e:
+        console.print(f"[red]Invalid JSON: {e}[/red]")
+        sys.exit(1)
+
+    if payload.get("version") != 1:
+        console.print("[red]Unsupported export format version.[/red]")
+        sys.exit(1)
+
+    raw_cases = payload.get("cases", [])
+    if not raw_cases:
+        console.print("[yellow]No cases found in export file.[/yellow]")
+        return
+
+    memory = _get_memory()
+    imported = skipped = 0
+
+    for raw in raw_cases:
+        case = BugCase.model_validate(raw)
+        if skip_existing and memory.get(case.id) is not None:
+            skipped += 1
+            continue
+        if dry_run:
+            console.print(f"  [dim]would import[/dim] {case.id} — {case.title}")
+        else:
+            memory.save(case)
+            _cli_audit(memory, "import", case.id, source=input_file)
+        imported += 1
+
+    if dry_run:
+        console.print(
+            f"\n[bold]Dry run:[/bold] would import {imported}, skip {skipped} existing."
+        )
+    else:
+        console.print(f"[green]Imported {imported} case(s), skipped {skipped}.[/green]")
 
 
 if __name__ == "__main__":

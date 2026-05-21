@@ -194,7 +194,27 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
         similar_case_ids: list[str] = []
 
         max_turns = 20
-        for _ in range(max_turns):
+        max_wall_secs = float(os.environ.get("DEBUG_MIND_MAX_WALL_SECS", "300"))
+        _deadline = time.monotonic() + max_wall_secs
+        for _turn in range(max_turns):
+            if stream:
+                yield ("turn", {"turn": _turn + 1, "max_turns": max_turns})
+            if time.monotonic() > _deadline:
+                _log.warning(
+                    "wall-clock timeout reached",
+                    extra={"trace_id": trace_id, "max_wall_secs": max_wall_secs},
+                )
+                if stream:
+                    yield ("thinking", f"\n[Timeout: diagnosis exceeded {max_wall_secs:.0f}s]")
+                partial = self._build_partial_result(
+                    diagnosis_steps,
+                    saved_case_id,
+                    similar_case_ids,
+                    assistant_content=None,
+                    budget_reason=f"wall-clock timeout ({max_wall_secs:.0f}s)",
+                )
+                yield ("done", partial)
+                return
             try:
                 # D4: Prompt caching — cache system prompt and last tool to reduce cost
                 cache_control = {"type": "ephemeral"}

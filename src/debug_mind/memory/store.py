@@ -96,14 +96,26 @@ class MemoryStore:
         self._cleanup_stale_tmps()
 
     def _create_backend(self):
-        backend_choice = os.environ.get("DEBUG_MIND_BACKEND", "chroma").lower()
+        # Default is SQLite — pure stdlib, no C extensions, works on every platform.
+        # Set DEBUG_MIND_BACKEND=chroma to use ChromaDB (pip install debug-mind[chroma]).
+        backend_choice = os.environ.get("DEBUG_MIND_BACKEND", "sqlite").lower()
         if backend_choice == "sqlite":
             from debug_mind.memory.backends.sqlite_backend import SQLiteBackend
 
             return SQLiteBackend(self.memory_dir)
-        from debug_mind.memory.backends.chroma_backend import ChromaBackend
-
-        return ChromaBackend(self.memory_dir)
+        if backend_choice == "chroma":
+            try:
+                from debug_mind.memory.backends.chroma_backend import ChromaBackend
+            except ImportError:
+                raise ImportError(
+                    "ChromaDB is not installed. "
+                    "Run: pip install debug-mind[chroma]\n"
+                    "Or use the default SQLite backend (no extra install needed)."
+                ) from None
+            return ChromaBackend(self.memory_dir)
+        raise ValueError(
+            f"Unknown backend {backend_choice!r}. Valid values: sqlite, chroma."
+        )
 
     def _embed(self, texts: list[str]) -> list[list[float]]:
         """Embed one or more texts, returning a list of embedding vectors."""
@@ -116,12 +128,20 @@ class MemoryStore:
                 self._cached_embed_fn = default_embedding()
             except Exception as e:
                 _log.warning(
-                    "Failed to init embedding function, using fallback", extra={"error": str(e)}
+                    "Embedding init failed — falling back to trigram hash. "
+                    "Search quality is significantly degraded. "
+                    "Fix: pip install debug-mind[embeddings]",
+                    extra={"error": str(e)},
                 )
                 self._cached_embed_fn = _fallback_embed
         try:
             vectors = self._cached_embed_fn(texts)
-        except Exception:
+        except Exception as e:
+            _log.warning(
+                "Embedding call failed — falling back to trigram hash. "
+                "Search quality is significantly degraded.",
+                extra={"error": str(e)},
+            )
             vectors = _fallback_embed(texts)
         return [_as_float_list(v) for v in vectors]
 
