@@ -38,30 +38,10 @@ def _as_float_list(vector) -> list[float]:
 
 
 def _fallback_embed(texts: list[str]) -> list[list[float]]:
-    """Deterministic fallback embedding using character trigram hashing.
+    """Last-resort embedding — trigram hash, pure Python, zero deps."""
+    from debug_mind.memory.embeddings import _trigram_hash_embedding
 
-    Used when the ONNX model fails to download (e.g. CI without internet).
-    Produces 384-dim vectors — same dimensionality as all-MiniLM-L6-v2.
-    """
-    import hashlib
-
-    dim = 384
-    vectors = []
-    for text in texts:
-        vec = [0.0] * dim
-        # Hash trigrams to fill the vector
-        text_lower = text.lower()
-        for i in range(len(text_lower) - 2):
-            trigram = text_lower[i : i + 3]
-            h = int(hashlib.md5(trigram.encode()).hexdigest(), 16)
-            idx = h % dim
-            vec[idx] += 0.01
-        # Normalize
-        norm = sum(v * v for v in vec) ** 0.5
-        if norm > 0:
-            vec = [v / norm for v in vec]
-        vectors.append(vec)
-    return vectors
+    return _trigram_hash_embedding(texts)
 
 
 class MemoryBusyError(Exception):
@@ -282,7 +262,7 @@ class MemoryStore:
         self,
         query: str,
         top_k: int = 5,
-        min_score: float = 0.3,
+        min_score: float = 0.1,
         include_unverified: bool = True,
     ) -> list[SearchResult]:
         """Search for similar bug cases by semantic similarity.
