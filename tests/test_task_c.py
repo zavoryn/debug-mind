@@ -16,9 +16,10 @@ class TestMakeEmbedding:
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             fn = make_embedding("nonexistent-provider")
-            assert len(w) == 1
-            assert "falling back" in str(w[0].message).lower()
-        # Should still be callable
+            # At least one warning about unknown provider; may have a second one
+            # if chromadb is not installed and default_embedding() also warns.
+            assert len(w) >= 1
+            assert any("falling back" in str(x.message).lower() for x in w)
         assert fn is not None
 
     def test_default_provider(self):
