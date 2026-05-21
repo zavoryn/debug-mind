@@ -635,6 +635,10 @@ def _case_to_markdown(case: BugCase) -> str:
 - hit_count: {case.hit_count}
 - last_used_at: {case.last_used_at.isoformat() if case.last_used_at else ""}
 - superseded_by: {case.superseded_by or ""}
+- last_verified_at: {case.last_verified_at.isoformat() if case.last_verified_at else ""}
+- verify_count: {case.verify_count}
+- version: {case.version}
+- links: {json.dumps(case.links, ensure_ascii=False)}
 """
 
 
@@ -742,5 +746,27 @@ def _markdown_to_case(path: Path) -> BugCase | None:
         val = m.group(1).strip()
         if val:
             case.superseded_by = val
+    if m := re.search(r"^- last_verified_at:\s*(\S+)", text, re.MULTILINE):
+        val = m.group(1).strip()
+        if val:
+            try:
+                case.last_verified_at = datetime.fromisoformat(val)
+            except ValueError:
+                pass
+    if m := re.search(r"^- verify_count:\s*(\d+)", text, re.MULTILINE):
+        case.verify_count = int(m.group(1))
+    if m := re.search(r"^- version:\s*(\d+)", text, re.MULTILINE):
+        case.version = int(m.group(1))
+    if m := re.search(r"^- links:\s*(\[.*\])", text, re.MULTILINE):
+        try:
+            parsed_links = json.loads(m.group(1))
+            if isinstance(parsed_links, list):
+                case.links = [
+                    {"case_id": str(item["case_id"]), "relation": str(item["relation"])}
+                    for item in parsed_links
+                    if isinstance(item, dict) and "case_id" in item and "relation" in item
+                ]
+        except (json.JSONDecodeError, KeyError, TypeError):
+            pass
 
     return case

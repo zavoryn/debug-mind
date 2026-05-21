@@ -165,6 +165,47 @@ class TestMarkUsed:
 
 
 class TestVerify:
+    def test_verify_metadata_roundtrips(self, store: MemoryStore):
+        """Verify count and last_verified_at should persist across reloads."""
+        from datetime import datetime, timezone
+
+        case = _make_case(id="verify-meta")
+        store.save(case)
+
+        ok = store.verify("verify-meta", correct=True, notes="Confirmed by author")
+        assert ok
+
+        updated = store.get("verify-meta")
+        assert updated is not None
+        assert updated.verified is True
+        assert updated.verification_notes == "Confirmed by author"
+        assert updated.verify_count == 1
+        assert updated.last_verified_at is not None
+
+        reloaded = MemoryStore(memory_dir=store.memory_dir, embedding_fn=store._embedding_fn).get(
+            "verify-meta"
+        )
+        assert reloaded is not None
+        assert reloaded.verify_count == 1
+        assert reloaded.last_verified_at is not None
+
+    def test_links_roundtrip(self, store: MemoryStore):
+        """Links between cases should persist across reloads."""
+        first = _make_case(id="link-a", title="Link A")
+        second = _make_case(id="link-b", title="Link B")
+        store.save(first)
+        store.save(second)
+
+        assert store.link("link-a", "link-b", "variant")
+
+        reloaded_a = store.get("link-a")
+        reloaded_b = store.get("link-b")
+
+        assert reloaded_a is not None
+        assert reloaded_b is not None
+        assert {"case_id": "link-b", "relation": "variant"} in reloaded_a.links
+        assert {"case_id": "link-a", "relation": "variant"} in reloaded_b.links
+
     def test_verify_correct(self, store: MemoryStore):
         case = _make_case(id="verify-ok")
         store.save(case)
