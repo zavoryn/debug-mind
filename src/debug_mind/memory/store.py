@@ -93,9 +93,7 @@ class MemoryStore:
                     "Or use the default SQLite backend (no extra install needed)."
                 ) from None
             return ChromaBackend(self.memory_dir)
-        raise ValueError(
-            f"Unknown backend {backend_choice!r}. Valid values: sqlite, chroma."
-        )
+        raise ValueError(f"Unknown backend {backend_choice!r}. Valid values: sqlite, chroma.")
 
     def _embed(self, texts: list[str]) -> list[list[float]]:
         """Embed one or more texts, returning a list of embedding vectors."""

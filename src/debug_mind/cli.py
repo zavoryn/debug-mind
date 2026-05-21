@@ -85,7 +85,11 @@ def _warn_invalid_env() -> None:
                 f"[yellow]Warning:[/yellow] {var}={val!r} is not recognised. "
                 f"Valid values: {', '.join(sorted(valid))}"
             )
-    for float_var in ("DEBUG_MIND_MAX_COST", "DEBUG_MIND_DEDUP_THRESHOLD", "DEBUG_MIND_HIT_COUNT_WEIGHT"):
+    for float_var in (
+        "DEBUG_MIND_MAX_COST",
+        "DEBUG_MIND_DEDUP_THRESHOLD",
+        "DEBUG_MIND_HIT_COUNT_WEIGHT",
+    ):
         raw = os.environ.get(float_var)
         if raw is not None:
             try:
@@ -896,9 +900,7 @@ def import_cases(input_file: str, skip_existing: bool, dry_run: bool):
         imported += 1
 
     if dry_run:
-        console.print(
-            f"\n[bold]Dry run:[/bold] would import {imported}, skip {skipped} existing."
-        )
+        console.print(f"\n[bold]Dry run:[/bold] would import {imported}, skip {skipped} existing.")
     else:
         console.print(f"[green]Imported {imported} case(s), skipped {skipped}.[/green]")
 

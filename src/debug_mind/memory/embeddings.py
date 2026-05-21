@@ -25,6 +25,7 @@ class EmbeddingFunction(Protocol):
 
 # ── Trigram hash fallback — pure Python, zero deps ────────────────────────────
 
+
 def _trigram_hash_embedding(texts: list[str]) -> list[list[float]]:
     """Deterministic embedding via character trigram hashing.
 
