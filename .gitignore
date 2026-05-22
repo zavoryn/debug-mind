@@ -14,3 +14,4 @@ memory/sqlite/
 memory/cases/
 memory/audit.jsonl
 .claude/
+*_PLAN.md
