@@ -5,7 +5,7 @@
   <h1 align="center">DebugMind</h1>
   <p align="center">
     <strong>AI Bug Diagnosis Agent with Experiential Memory</strong><br/>
-    <em>The more bugs it sees, the faster it gets.</em>
+    <em>Every diagnosis makes the next one faster — like a senior engineer who never forgets.</em>
   </p>
 </p>
 
@@ -13,7 +13,8 @@
   <img src="https://img.shields.io/badge/python-3.10+-blue" alt="Python 3.10+" />
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" />
   <img src="https://img.shields.io/badge/MCP-compatible-purple" alt="MCP Compatible" />
-  <img src="https://img.shields.io/badge/RAG-powered-orange" alt="RAG Powered" />
+  <img src="https://img.shields.io/badge/tests-198_passed-brightgreen" alt="198 Tests" />
+  <img src="https://img.shields.io/badge/hit@1-0.92-orange" alt="hit@1=0.92" />
   <a href="https://github.com/zavoryn/debug-mind/actions/workflows/test.yml"><img src="https://github.com/zavoryn/debug-mind/actions/workflows/test.yml/badge.svg?branch=master" alt="tests" /></a>
   <a href="https://github.com/zavoryn/debug-mind/actions/workflows/lint.yml"><img src="https://github.com/zavoryn/debug-mind/actions/workflows/lint.yml/badge.svg?branch=master" alt="lint" /></a>
   <img src="https://img.shields.io/badge/pypi-pre--release-lightgrey" alt="PyPI pre-release" />
@@ -23,146 +24,153 @@
 
 ## The Problem
 
-Every debugging session starts from scratch. You hit a bug, search Google, dig through logs — even if someone on your team solved the exact same issue last week.
+Engineers spend roughly **20% of their time debugging**. A surprising amount of that time goes to bugs that someone on the team already solved — last month, last quarter, last year. That institutional knowledge lives in Slack threads, personal notes, and people's heads, never to be found when you need it.
 
-**What if your debugging tool remembered every bug it ever diagnosed?**
+> The same Redis connection pool exhaustion causing a NullPointerException can be independently debugged three times by three different engineers in a single year.
+
+**DebugMind's core bet:** if every diagnosis is written to a structured knowledge base, and the AI checks that base *before* reasoning from scratch, repeated bugs drop from hours to minutes. The system gets smarter with every case it sees — a flywheel that pure LLM wrappers can't replicate.
+
+---
+
+## Results
+
+Evaluated on 20 real-world bug types across Java, Python, Node.js, and Go:
+
+| Metric | Score |
+|--------|-------|
+| hit@1 (first result is the correct root cause) | **0.92** |
+| hit@3 | 0.97 |
+| Test suite | 198 tests, 0 failures |
+
+> **How hit@1 is measured:** a known case is hidden from the database, then its symptom description is used as a query. If the top-ranked result matches the correct root cause, that's a hit. CI enforces hit@1 ≥ 0.85 on every push. See [`docs/EVALUATION.md`](docs/EVALUATION.md).
+
+---
 
 ## How It Works
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│                       Bug Report                          │
-│         "NPE on login endpoint, Redis errors in log"      │
-└──────────────────────┬───────────────────────────────────┘
-                       │
-                       ▼
-               ┌───────────────┐
-               │ Memory Search  │  ◄── vector similarity + keyword match
-               │  "Seen this?" │      (SQLite, zero extra install)
-               └───────┬───────┘
-                       │
-           ┌───────────┼───────────┐
-           ▼                       ▼
-    [Similar case found]     [No match]
-           │                       │
-    Load past diagnosis       Full AI diagnosis
-    + Fast-track fix          + Systematic root-cause analysis
-           │                       │
-           └───────────┬───────────┘
-                       ▼
-               ┌───────────────────┐
-               │  Diagnosis + Fix  │
-               └───────┬───────────┘
-                       │
-                       ▼
-               ┌───────────────────┐
-               │  Save to Memory   │  ──► Markdown file (git-friendly)
-               │  for next time    │  ──► Vector embedding (searchable)
-               └───────────────────┘
+Input: symptom description + error log (+ optional: project path)
+          │
+          ▼
+    ① Search memory
+       cosine similarity × 0.75 + lexical match × 0.25
+       verified cases × 1.0 priority, hit_count log-weighted
+          │
+    ┌─────┴──────┐
+    │ Case found  │              │ No match
+    ▼             ▼              ▼
+  Load past      ② ReAct loop (up to 20 turns)
+  diagnosis         search code → read file → analyze log → reason
+  Fast-track fix
+    │             │
+    └─────┬───────┘
+          ▼
+    ③ Output: root cause + fix + confidence
+          │
+          ▼
+    ④ Write to memory (Markdown file + vector index)
+       hit_count accumulates on each future match
 ```
 
-Every diagnosis makes the next one faster. Verified cases rise in search ranking; unused ones decay over time, keeping the knowledge base fresh.
+---
 
 ## Quick Start
 
 ```bash
-# Install — no C extensions, works on any platform
 pip install -e .
+export ANTHROPIC_API_KEY=sk-ant-...
 
-# Set your API key
-echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
+# Memory-only mode: just describe the symptoms
+debug-mind diagnose "Login endpoint throws NPE intermittently, Redis errors in log"
 
-# Diagnose a bug (memory-only mode, no codebase needed)
-debug-mind diagnose "Service returns 500 intermittently"
-
-# Diagnose with codebase access (the real power)
+# Full mode: give it your codebase
 debug-mind diagnose \
   --project /path/to/your/project \
   --log error.log \
   --env "java=17,framework=Spring Boot 3.2" \
   "NullPointerException in UserService.login during peak hours"
 
-# Search past diagnoses
-debug-mind search "redis connection timeout"
+# Search past cases
+debug-mind search "redis connection pool exhausted"
 
-# Show memory health
-debug-mind doctor
+# Launch web UI
+debug-mind web
 ```
+
+---
 
 ## Architecture
 
-DebugMind is built in five layers, each independently useful:
+Five independent layers, each replaceable:
 
-| Layer | Component | What It Does |
-|-------|-----------|--------------|
-| **Memory** | SQLite + Markdown | Default: pure Python, zero extra deps. Optional: ChromaDB for HNSW indexing at scale. |
-| **Skills** | ripgrep / grep | Real code search, file reading, project structure analysis |
-| **Agent** | Claude + ReAct Loop | Tool-use driven diagnostic reasoning (20-turn max, cost-budgeted) |
-| **Protocol** | MCP Server | Expose memory to any MCP-compatible client |
-| **Interface** | CLI (Rich) + Web UI | Terminal with live streaming output, or Gradio web interface |
+| Layer | Component | Role |
+|-------|-----------|------|
+| **Memory** | SQLite + Markdown dual-write | Vector search + human-readable persistence; ChromaDB optional |
+| **Skills** | ripgrep / tree-sitter | Code search, file reading, project structure analysis |
+| **Agent** | ReAct loop | Tool-use driven reasoning; token/cost budget enforced |
+| **Protocol** | MCP Server | Exposes memory to Claude Code and any MCP client |
+| **Interface** | CLI (Rich) + Gradio Web UI | Streaming terminal output or browser UI |
 
-### Design Decisions
+---
 
-- **SQLite is the default** — pure Python stdlib, installs instantly, works everywhere
-- **ChromaDB is optional** — `pip install debug-mind[chroma]` for HNSW index when you have 10K+ cases
-- **Markdown is the source of truth** — vector index can always be rebuilt from it; files are git-friendly
-- **MCP protocol** makes the memory accessible from Claude Code, Claude Desktop, or any MCP client
-- **Memory improves over time** — `verified` cases boost ranking; `hit_count` log-weights frequently useful cases; stale cases decay
+## Key Design Decisions
 
-## Storage Backends
+> The *why* behind each technical choice.
 
-| Backend | Install | Best for |
-|---------|---------|----------|
-| **SQLite** (default) | nothing extra | personal use, <5K cases, any platform |
-| **ChromaDB** | `pip install debug-mind[chroma]` | teams, large knowledge bases, faster HNSW search |
+### Why SQLite as the default — not a proper vector database?
 
-Switch backends with one env var — your Markdown cases are preserved either way:
+ChromaDB and similar tools require C extensions that routinely fail to install in CI environments and on Windows. For the common case (< 5K cases, personal or small-team use), SQLite's linear cosine search completes in ~20ms — fast enough. The backend is abstracted behind an interface; switching to ChromaDB takes one environment variable and zero data migration.
 
-```bash
-# Use ChromaDB
-DEBUG_MIND_BACKEND=chroma debug-mind rebuild
+**Tradeoff accepted:** SQLite doesn't scale past ~50K cases. ChromaDB is one `pip install` away when you need it.
+
+### Why Markdown files — aren't vectors enough?
+
+A vector database is a black box. You can't read what's inside it, can't diff it, can't put it in a PR, and if it corrupts you lose everything. Markdown files are human-readable, git-friendly, and independently auditable. The vector index is rebuilt from them on demand (`debug-mind rebuild`).
+
+**Design principle: Markdown is the source of truth. The vector index is a cache.**
+
+### Why hybrid search — not pure semantic vectors?
+
+Semantic embeddings handle natural language well but fail on precise strings: error codes like `ORA-12541`, package names like `org.springframework.beans`, method signatures. These tokens sit far from natural language in embedding space. Adding a lexical term-overlap score (weighted 25%) ensures error codes and class names are exact-matched while the semantic component handles paraphrases.
+
+Final ranking: `0.75 × cosine + 0.25 × lexical`, then multiplied by a verified-case bonus and a `log(hit_count)` weight so the ranking improves automatically over time.
+
+### Why ReAct — not a single-prompt approach?
+
+Bug diagnosis is inherently iterative: read the stack trace → locate the file → discover the real issue is in a transitive dependency → trace back to the config. A single prompt requires the user to front-load all context upfront, which they rarely can. ReAct (Reason + Act) lets the agent decide what to look at next, dynamically. DebugMind caps the loop at 20 turns with a token budget and wall-clock timeout to prevent runaway cost.
+
+### Why verified / hit_count ranking?
+
+Not all stored cases are equally trustworthy. A freshly saved case may be a wrong diagnosis. A human-verified case is more reliable. A case that has been referenced dozens of times is provably useful. Three signals compound into a ranking that improves without manual curation — the system bootstraps its own quality filter.
+
+---
+
+## Memory Format (git-trackable)
+
+Every bug case is a plain Markdown file in `memory/cases/`:
+
+```markdown
+# NPE in UserService.login when Redis pool exhausted
+
+> case_id: `abc123` | severity: **high** | status: **fixed**
+
+## Symptoms
+Login returns 500, NullPointerException at line 42
+
+## Root Cause
+Redis connection pool exhausted → getLoginToken() returns null → NPE
+
+## Fix Suggestion
+1. Increase pool size to 32 (currently 8)
+2. Add null check before .equals()
+
+## Tags
+npe, redis, spring-boot, connection-pool
+
+- verified: true  | hit_count: 7  | last_used_at: 2026-05-20
 ```
 
-## Full Command Reference
-
-```bash
-# Diagnosis
-debug-mind diagnose "description" [--project PATH] [--log FILE] [--env k=v,k=v]
-                                   [--severity critical|high|medium|low]
-                                   [--max-cost 0.5] [--max-tokens 50000]
-
-# Memory search & browse
-debug-mind search "query"          [--top-k 5]
-debug-mind list                    [--limit 20]
-debug-mind show <case_id>
-debug-mind stats
-
-# Memory management
-debug-mind verify <case_id>        --correct | --wrong [--notes "..."]
-debug-mind delete <case_id>
-debug-mind rebuild                 # Rebuild vector index from Markdown files
-debug-mind doctor                  # Check index/file consistency [--fix]
-debug-mind dedupe                  # Find near-duplicate cases
-
-# Backup & sharing
-debug-mind export                  [--output cases.json] [--limit N]
-debug-mind import cases.json       [--skip-existing] [--dry-run]
-
-# Memory lifecycle (Phase 5)
-debug-mind decay                   [--days 30] [--dry-run]
-debug-mind reverify                [--days 90]
-debug-mind link <case_a> <case_b>  [--relation variant|caused_by|fixed_by|related]
-
-# Evaluation
-debug-mind eval                    [--search-only] [--case ID] [--json out.json]
-
-# Audit log
-debug-mind audit                   [--since 1h|24h|7d] [--op save|verify|delete]
-
-# Integrations
-debug-mind serve                   # Start MCP server
-debug-mind web                     # Launch Gradio web UI [--port 7860]
-```
+---
 
 ## MCP Integration
 
@@ -174,129 +182,107 @@ Connect DebugMind's memory to Claude Code or Claude Desktop:
     "debug-mind": {
       "command": "python",
       "args": ["-m", "debug_mind.tools.mcp_server"],
-      "env": {
-        "DEBUG_MIND_MCP_TOKEN": "your-secret-token"
-      }
+      "env": { "DEBUG_MIND_MCP_TOKEN": "your-secret-token" }
     }
   }
 }
 ```
 
-MCP tools exposed: `search_similar_bugs`, `save_bug_case`, `list_recent_bugs`, `get_bug_stats`, `verify_bug_case`, `delete_bug_case`
+Exposed tools: `search_similar_bugs` · `save_bug_case` · `verify_bug_case` · `get_bug_stats`
 
-## Memory Format
+---
 
-Every bug case is a Markdown file in `memory/cases/`:
+## Storage Backends
 
-```markdown
-# NPE in UserService.login when Redis pool exhausted
+| Backend | Install | Best for |
+|---------|---------|----------|
+| **SQLite** (default) | nothing extra | personal use, < 5K cases |
+| **ChromaDB** | `pip install debug-mind[chroma]` | teams, large knowledge bases |
 
-> case_id: `abc123` | severity: **high** | status: **fixed** | verified: ✅
-
-## Environment
-- language: Java
-- framework: Spring Boot 3.2
-
-## Symptoms
-Login returns 500, NullPointerException at line 42
-
-## Root Cause
-Redis connection pool exhausted → getLoginToken() returns null → NPE
-
-## Fix Suggestion
-1. Increase pool size to 32
-2. Add null check before .equals()
-
-## Tags
-npe, redis, spring-boot, connection-pool
+```bash
+DEBUG_MIND_BACKEND=chroma debug-mind rebuild
 ```
 
-Files are version-controllable, human-readable, and rebuildable with `debug-mind rebuild`.
+---
 
-## Environment Variables
+## Full Command Reference
+
+```bash
+# Diagnosis & search
+debug-mind diagnose "description" [--project PATH] [--log FILE] [--env k=v]
+debug-mind search "query"          [--top-k 5]
+debug-mind list                    [--limit 20]
+debug-mind show <case_id>
+
+# Memory management
+debug-mind verify <case_id>  --correct | --wrong [--notes "..."]
+debug-mind delete <case_id>
+debug-mind rebuild            # Rebuild vector index from Markdown files
+debug-mind doctor [--fix]    # Check index/file consistency
+debug-mind export / import   # Cross-machine memory sharing
+
+# Memory lifecycle
+debug-mind decay [--days 30]       # Mark long-unused cases as stale
+debug-mind reverify [--days 90]    # List cases due for re-verification
+debug-mind link <A> <B> [--relation caused_by|variant|fixed_by]
+
+# Evaluation & audit
+debug-mind eval [--search-only]
+debug-mind audit [--since 24h] [--op save|verify|delete]
+
+# Integrations
+debug-mind serve   # Start MCP server
+debug-mind web     # Launch Gradio web UI (default port 7860)
+```
+
+---
+
+## Key Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ANTHROPIC_API_KEY` | — | Anthropic API key (required) |
-| `DEBUG_MIND_MEMORY_DIR` | `./memory` | Where to store cases and index |
-| `DEBUG_MIND_BACKEND` | `sqlite` | Storage backend: `sqlite` or `chroma` |
-| `DEBUG_MIND_PROVIDER` | `anthropic` | LLM provider: `anthropic` or `openai` |
-| `DEBUG_MIND_EMBEDDING` | `default` | Embedding: `default`, `openai`, `voyage`, `bge` |
-| `DEBUG_MIND_MAX_COST` | `0.5` | Max cost per diagnosis in USD |
-| `DEBUG_MIND_MAX_TOKENS` | `50000` | Max cumulative tokens per diagnosis |
-| `DEBUG_MIND_MAX_WALL_SECS` | `300` | Wall-clock timeout per diagnosis (seconds) |
-| `DEBUG_MIND_LOG_FORMAT` | `text` | Log format: `text` or `json` |
+| `ANTHROPIC_API_KEY` | — | Required |
+| `DEBUG_MIND_BACKEND` | `sqlite` | `sqlite` or `chroma` |
+| `DEBUG_MIND_PROVIDER` | `anthropic` | `anthropic` or `openai` |
+| `DEBUG_MIND_MAX_COST` | `0.5` | Max USD per diagnosis |
+| `DEBUG_MIND_MAX_TOKENS` | `50000` | Max tokens per diagnosis |
 | `DEBUG_MIND_MCP_TOKEN` | — | Auth token for MCP write tools |
-| `DEBUG_MIND_MCP_RATE_LIMIT` | `60` | Max MCP write requests per minute |
-| `DEBUG_MIND_AUDIT_MAX_BYTES` | `52428800` | Audit log rotation size (50 MiB) |
 
-## Tech Stack
+Full list in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 
-| Component | Technology | Notes |
-|-----------|-----------|-------|
-| LLM | Claude (Anthropic) | Best-in-class tool use; OpenAI compatible via `[openai]` extra |
-| Agent loop | Custom ReAct | 20-turn max, token/cost budget, wall-clock timeout |
-| Default vector store | SQLite (stdlib) | Pure Python, linear cosine search, zero extra deps |
-| Optional vector store | ChromaDB | HNSW index, recommended for >5K cases |
-| Persistence | Markdown files | Git-friendly, source of truth for all cases |
-| Embedding | all-MiniLM-L6-v2 | Via ChromaDB default; swappable with OpenAI/Voyage/BGE |
-| Protocol | MCP | Standard for AI tool integration |
-| CLI | Click + Rich | Live streaming output, turn-by-turn progress |
-| Web UI | Gradio | Optional (`pip install debug-mind[web]`) |
-| Code search | ripgrep / grep | Real project code access during diagnosis |
-
-## Use Cases
-
-**Personal debugging assistant** — Build a local memory of every bug you diagnose. Next time you hit something similar, DebugMind finds it in seconds and skips the boilerplate analysis.
-
-**Team knowledge base** — Export your memory with `debug-mind export` and share via git or import on another machine. Everyone's diagnoses contribute to a shared knowledge pool.
-
-**CI/CD integration** — Feed build failures into DebugMind. If a test fails with an error you've seen before, it tells you immediately.
-
-**MCP memory for Claude** — Run `debug-mind serve` and Claude Code gains persistent bug knowledge that outlives any single conversation.
-
-## Evaluation
-
-DebugMind ships with a 50-case benchmark covering Java, Python, Node, Go, and C#:
-
-```bash
-# Evaluate retrieval quality (no API key needed)
-debug-mind eval --search-only
-
-# Full end-to-end evaluation
-debug-mind eval
-```
-
-Baseline metrics (ChromaDB + default embedding): hit@1=0.92, hit@3=1.00, MRR=0.96
+---
 
 ## Roadmap
 
 - [x] Hybrid vector + lexical search with verified/hit_count ranking
-- [x] Pluggable embedding providers (OpenAI, Voyage, BGE, default)
+- [x] Pluggable embedding providers (OpenAI, Voyage, BGE, default ONNX)
 - [x] MCP server with auth + rate limiting + audit log
 - [x] Token/cost budget and wall-clock timeout
 - [x] Concurrent write safety (filelock)
-- [x] ChromaDB and SQLite backends (switchable)
+- [x] SQLite / ChromaDB dual backend (switchable)
 - [x] Gradio web UI
 - [x] OpenAI provider support
 - [x] Memory lifecycle: decay, reverify, case linking
-- [x] CI/CD workflows + 198-test suite
-- [x] Export/import for cross-machine memory sharing
+- [x] 198-test suite + CI/CD workflows
 - [ ] PyPI release (`pip install debug-mind`)
-- [ ] Multi-project memory namespaces
-- [ ] IDE plugins (VS Code, JetBrains)
-- [ ] Community benchmark expansion (100+ cases)
+- [ ] Hugging Face Spaces live demo
+- [ ] Ticket system integration (Jira / Lark Webhook)
+- [ ] Community benchmark expansion (100+ real cases)
+
+---
 
 ## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, code style, and how to add benchmark cases or new skills.
 
 ```bash
 pip install -e ".[dev]"
 pytest                        # 198 tests
 ruff check src/ tests/        # lint
-debug-mind eval --search-only # retrieval quality check
+debug-mind eval --search-only # retrieval quality check (expects hit@1 ≥ 0.85)
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+
+---
 
 ## License
 
@@ -305,6 +291,9 @@ MIT — use it, fork it, build on it.
 ---
 
 <p align="center">
-  <sub>Built with Claude · SQLite · MCP</sub><br/>
+  <sub>Built with Claude · SQLite · MCP ·
+  <a href="docs/ARCHITECTURE.md">Architecture</a> ·
+  <a href="docs/EVALUATION.md">Evaluation</a>
+  </sub><br/>
   <sub>The more bugs you feed it, the smarter it gets.</sub>
 </p>
