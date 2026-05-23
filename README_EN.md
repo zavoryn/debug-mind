@@ -109,11 +109,11 @@ Five independent layers, each replaceable:
 
 | Layer | Component | Role |
 |-------|-----------|------|
-| **Memory** | SQLite + Markdown dual-write | Vector search + human-readable persistence; ChromaDB optional |
-| **Skills** | ripgrep / tree-sitter | Code search, file reading, project structure analysis |
-| **Agent** | ReAct loop | Tool-use driven reasoning; token/cost budget enforced |
-| **Protocol** | MCP Server | Exposes memory to Claude Code and any MCP client |
-| **Interface** | CLI (Rich) + Gradio Web UI | Streaming terminal output or browser UI |
+| **Clients** | CLI · Web UI · MCP Client | Terminal, Gradio browser UI, MCP protocol (Claude Code / Desktop) |
+| **Agent** | DiagnosticAgent · ReAct loop | Tool-use driven reasoning; token / cost / wall-clock budget; Claude · GPT-4o |
+| **Skills** | ripgrep · tree-sitter | Code search, file reading, project structure analysis |
+| **Memory** | Hybrid Search · Embedding | 0.75×semantic vector + 0.25×lexical; verified/hit_count dynamic ranking |
+| **Storage** | SQLite · ChromaDB · Markdown | Zero-dep default; optional HNSW; Markdown is source of truth, git-trackable |
 
 ---
 

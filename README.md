@@ -111,11 +111,11 @@ DebugMind 分为五层，每层独立可替换：
 
 | 层级 | 组件 | 说明 |
 |------|------|------|
-| **记忆层** | SQLite + Markdown 双写 | 向量检索 + 人类可读持久化；可选 ChromaDB |
-| **技能层** | ripgrep / tree-sitter | 代码搜索、文件读取、项目结构分析 |
-| **智能体层** | ReAct 循环 | 工具调用式推理，有 token/成本预算上限 |
-| **协议层** | MCP Server | 将记忆暴露给 Claude Code 等 MCP 客户端 |
-| **交互层** | CLI (Rich) + Gradio Web UI | 流式终端输出，或浏览器界面 |
+| **客户端层** | CLI · Web UI · MCP Client | 命令行终端、Gradio 浏览器界面、MCP 协议接口（Claude Code / Desktop） |
+| **Agent 层** | DiagnosticAgent · ReAct 循环 | 工具调用式推理，token / 成本 / 挂钟三重预算；支持 Claude · GPT-4o |
+| **技能层** | ripgrep · tree-sitter | 代码搜索、文件读取、项目结构分析 |
+| **记忆层** | 混合检索 · Embedding | 0.75×语义向量 + 0.25×词法匹配；verified/hit_count 动态排序 |
+| **存储层** | SQLite · ChromaDB · Markdown | 默认纯 Python 零依赖；可选 HNSW 加速；Markdown 为数据源头可 git 追踪 |
 
 ---
 
