@@ -103,6 +103,50 @@ debug-mind web
 
 ## 架构设计
 
+```mermaid
+graph TB
+    subgraph Clients["客户端"]
+        CLI["CLI\ndebug-mind diagnose"]
+        Web["Web UI\nGradio"]
+        MCPC["MCP 客户端\nClaude Code / Desktop"]
+    end
+
+    subgraph AgentLayer["Agent 层 — ReAct 推理循环"]
+        Agent["DiagnosticAgent\n推理 → 调工具 → 观察结果"]
+        Budget["预算守卫\ntoken / 成本 / 时间三重限制"]
+        LLM["LLM Provider\nClaude · GPT-4o"]
+    end
+
+    subgraph SkillsLayer["技能层"]
+        Code["代码搜索\nripgrep / tree-sitter"]
+        File["文件读取"]
+    end
+
+    subgraph MemoryLayer["记忆层"]
+        Search["混合检索\n0.75 × 语义向量 + 0.25 × 词法匹配\nverified 案例优先 · hit_count 对数加权"]
+        Embed["向量化\nONNX · OpenAI · BGE · Voyage"]
+    end
+
+    subgraph StorageLayer["存储层 — 双写"]
+        SQLite[("SQLite\n默认后端")]
+        Chroma[("ChromaDB\n可选，HNSW")]
+        MD["Markdown 文件\n数据源头，Git 可追踪"]
+    end
+
+    Clients --> Agent
+    Agent <--> Budget
+    Agent <--> LLM
+    Agent --> Code
+    Agent --> File
+    Agent --> Search
+    Search --> Embed
+    Embed --> SQLite
+    Embed --> Chroma
+    Search <--> MD
+    MD -.->|"rebuild 重建索引"| SQLite
+    SQLite -.->|"hit_count 反馈\n改善排序"| Search
+```
+
 DebugMind 分为五层，每层独立可替换：
 
 | 层级 | 组件 | 说明 |
