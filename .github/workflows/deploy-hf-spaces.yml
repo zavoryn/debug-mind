@@ -28,5 +28,5 @@ jobs:
       - name: Deploy to HF Spaces
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          HF_SPACE_ID: ${{ vars.HF_SPACE_ID || 'zavoryn/debug-mind' }}
+          HF_SPACE_ID: ${{ vars.HF_SPACE_ID || 'chenming6886/debug-mind' }}
         run: python scripts/deploy_hf.py

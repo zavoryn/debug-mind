@@ -15,7 +15,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SPACE_ID = os.environ.get("HF_SPACE_ID", "zavoryn/debug-mind")
+SPACE_ID = os.environ.get("HF_SPACE_ID", "chenming6886/debug-mind")
 
 # Files/dirs to copy into the HF Space (everything else is excluded).
 _INCLUDE_FILES = ["app.py", "requirements.txt"]
@@ -63,7 +63,7 @@ Get AI-powered root cause analysis. Enter your [Anthropic API key](https://conso
 
 ---
 
-[GitHub](https://github.com/zavoryn/debug-mind) | [README](https://github.com/zavoryn/debug-mind#readme)
+[GitHub](https://github.com/zavoryn/debug-mind) · [README](https://github.com/zavoryn/debug-mind#readme)
 """
 
 
