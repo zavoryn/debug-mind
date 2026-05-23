@@ -252,22 +252,58 @@ Full list in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 
 ---
 
+## The Bigger Picture: From Diagnostic Tool to Autonomous Loop
+
+DebugMind today is **Level 1** — human-triggered, AI gives advice, human applies the fix. The real leverage is automating the entire chain:
+
+```
+Level 1 (today)
+  Human describes bug → AI diagnoses → Human fixes
+
+Level 2 (near-term)
+  Alert/ticket fires → AI diagnoses automatically → Human reviews and merges
+
+Level 3 (end state)
+  Alert/ticket fires → AI diagnoses (memory-first) → AI attempts fix → runs tests
+                                                            ↓                   ↓
+                                                      Tests pass          Tests fail / low confidence
+                                                            ↓                   ↓
+                                                   Open PR + close ticket   Rollback + escalate
+                                                            ↓                   ↓
+                                                  Write ✅ success case   Write ❌ failure case
+                                                  (instant recall next time)  (never repeat the same wrong path)
+```
+
+**Failed attempts are as valuable as successes.** If the AI tries a fix and tests fail, that failed path is written to memory — the next similar bug won't repeat the same wrong approach. The knowledge base isn't just a "correct answers" library; it's a complete map of the diagnostic solution space.
+
+This mirrors the architecture used by companies like Xiaohongshu and ByteDance for internal AI incident management, where closed-loop systems (diagnose → execute → verify → remember) achieve >80% auto-resolution rates on recurring production bugs.
+
+---
+
 ## Roadmap
 
+**Done**
 - [x] Hybrid vector + lexical search with verified/hit_count ranking
 - [x] Pluggable embedding providers (OpenAI, Voyage, BGE, default ONNX)
 - [x] MCP server with auth + rate limiting + audit log
 - [x] Token/cost budget and wall-clock timeout
 - [x] Concurrent write safety (filelock)
 - [x] SQLite / ChromaDB dual backend (switchable)
-- [x] Gradio web UI
-- [x] OpenAI provider support
+- [x] Gradio web UI + OpenAI provider support
 - [x] Memory lifecycle: decay, reverify, case linking
 - [x] 198-test suite + CI/CD workflows
+
+**Near-term (Level 2)**
 - [ ] PyPI release (`pip install debug-mind`)
 - [ ] Hugging Face Spaces live demo
-- [ ] Ticket system integration (Jira / Lark Webhook)
-- [ ] Community benchmark expansion (100+ real cases)
+- [ ] Ticket system integration: Lark / Jira / PagerDuty webhook → auto-trigger diagnosis
+- [ ] Community benchmark expansion (100+ real bug types)
+
+**Mid-term (Level 3)**
+- [ ] Autonomous fix executor: AI generates patch → sandbox test run → opens PR on pass
+- [ ] Rollback mechanism: revert on test failure, re-queue ticket with escalation flag
+- [ ] Bidirectional memory writes: both successes and failed attempts feed the knowledge graph
+- [ ] Multi-project namespaces + RBAC permission isolation
 
 ---
 
