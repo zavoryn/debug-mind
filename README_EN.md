@@ -274,9 +274,7 @@ Level 3 (end state)
                                                   (instant recall next time)  (never repeat the same wrong path)
 ```
 
-**Failed attempts are as valuable as successes.** If the AI tries a fix and tests fail, that failed path is written to memory — the next similar bug won't repeat the same wrong approach. The knowledge base isn't just a "correct answers" library; it's a complete map of the diagnostic solution space.
-
-This mirrors the architecture used by companies like Xiaohongshu and ByteDance for internal AI incident management, where closed-loop systems (diagnose → execute → verify → remember) achieve >80% auto-resolution rates on recurring production bugs.
+**Failed attempts are as valuable as successes.** If the AI tries a fix and tests fail, that failed path is written to memory — the next similar bug won't repeat the same wrong approach. The knowledge base isn't just a "correct answers" library; it's a complete map of the diagnostic solution space, including dead ends.
 
 ---
 
