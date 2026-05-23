@@ -164,6 +164,11 @@ def launch_ui(port: int = 7860, share: bool = False, memory_dir: str | None = No
                 )
                 top_k = gr.Slider(1, 10, value=3, step=1, label="返回条数", scale=1)
             search_btn = gr.Button("🔍 搜索", variant="primary")
+            search_out = gr.Markdown()
+
+            query.submit(fn=do_search, inputs=[query, top_k], outputs=search_out)
+            search_btn.click(fn=do_search, inputs=[query, top_k], outputs=search_out)
+
             gr.Examples(
                 examples=[[q] for q in _EXAMPLE_QUERIES],
                 inputs=[query],
@@ -172,11 +177,6 @@ def launch_ui(port: int = 7860, share: bool = False, memory_dir: str | None = No
                 label="示例查询 — 点击后自动搜索",
                 run_on_click=True,
             )
-            search_out = gr.Markdown()
-
-            # Auto-search when example is clicked
-            query.submit(fn=do_search, inputs=[query, top_k], outputs=search_out)
-            search_btn.click(fn=do_search, inputs=[query, top_k], outputs=search_out)
 
             gr.Markdown("---")
             gr.Markdown("### 记忆库中的全部案例")
