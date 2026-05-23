@@ -18,6 +18,12 @@
   <a href="https://github.com/zavoryn/debug-mind/actions/workflows/test.yml"><img src="https://github.com/zavoryn/debug-mind/actions/workflows/test.yml/badge.svg?branch=master" alt="tests" /></a>
   <a href="https://github.com/zavoryn/debug-mind/actions/workflows/lint.yml"><img src="https://github.com/zavoryn/debug-mind/actions/workflows/lint.yml/badge.svg?branch=master" alt="lint" /></a>
   <img src="https://img.shields.io/badge/pypi-pre--release-lightgrey" alt="PyPI pre-release" />
+  <a href="https://huggingface.co/spaces/zavoryn/debug-mind"><img src="https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue" alt="Hugging Face Spaces" /></a>
+</p>
+
+<p align="center">
+  <a href="https://huggingface.co/spaces/zavoryn/debug-mind"><strong>🤗 在线体验 Live Demo</strong></a>
+  &nbsp;·&nbsp; Search Memory 无需 API Key，20 个真实案例即搜即用
 </p>
 
 ---
@@ -297,7 +303,7 @@ Level 3（终态）
 
 **近期（Level 2）**
 - [ ] PyPI 正式发布（`pip install debug-mind`）
-- [ ] Hugging Face Spaces 在线 Demo
+- [x] Hugging Face Spaces 在线 Demo
 - [ ] 工单系统接入：飞书 / Jira / PagerDuty Webhook，告警自动触发诊断
 - [ ] 社区基准案例库（100+ 真实 Bug 类型）
 

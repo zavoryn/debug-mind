@@ -1,0 +1,32 @@
+name: Deploy to HF Spaces
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'src/**'
+      - 'app.py'
+      - 'requirements.txt'
+      - 'evaluation/seed_cases/**'
+      - 'scripts/deploy_hf.py'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install huggingface-hub
+        run: pip install huggingface-hub
+
+      - name: Deploy to HF Spaces
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE_ID: ${{ vars.HF_SPACE_ID || 'zavoryn/debug-mind' }}
+        run: python scripts/deploy_hf.py

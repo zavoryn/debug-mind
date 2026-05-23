@@ -18,6 +18,12 @@
   <a href="https://github.com/zavoryn/debug-mind/actions/workflows/test.yml"><img src="https://github.com/zavoryn/debug-mind/actions/workflows/test.yml/badge.svg?branch=master" alt="tests" /></a>
   <a href="https://github.com/zavoryn/debug-mind/actions/workflows/lint.yml"><img src="https://github.com/zavoryn/debug-mind/actions/workflows/lint.yml/badge.svg?branch=master" alt="lint" /></a>
   <img src="https://img.shields.io/badge/pypi-pre--release-lightgrey" alt="PyPI pre-release" />
+  <a href="https://huggingface.co/spaces/zavoryn/debug-mind"><img src="https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue" alt="Hugging Face Spaces" /></a>
+</p>
+
+<p align="center">
+  <a href="https://huggingface.co/spaces/zavoryn/debug-mind"><strong>🤗 Try the Live Demo</strong></a>
+  &nbsp;·&nbsp; Search Memory works without any API key — 20 real-world bug cases ready to explore
 </p>
 
 ---
@@ -297,7 +303,7 @@ Level 3 (end state)
 
 **Near-term (Level 2)**
 - [ ] PyPI release (`pip install debug-mind`)
-- [ ] Hugging Face Spaces live demo
+- [x] Hugging Face Spaces live demo
 - [ ] Ticket system integration: Lark / Jira / PagerDuty webhook → auto-trigger diagnosis
 - [ ] Community benchmark expansion (100+ real bug types)
 
