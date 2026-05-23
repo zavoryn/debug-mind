@@ -118,7 +118,6 @@ def launch_ui(port: int = 7860, share: bool = False, memory_dir: str | None = No
     # ── Stats tab ─────────────────────────────────────────────────
     def do_stats():
         s = memory.stats()
-        verified_count = s.by_status.get("fixed", 0) + s.by_status.get("root_cause_found", 0)
         top_tags_md = " · ".join(f"`{tag}` ({cnt})" for tag, cnt in s.top_tags[:8])
         severity_md = " | ".join(
             f"{k}: {v}" for k, v in sorted(s.by_severity.items(), key=lambda x: -x[1])
