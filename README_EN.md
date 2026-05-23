@@ -101,49 +101,9 @@ debug-mind web
 
 ## Architecture
 
-```mermaid
-graph TB
-    subgraph Clients["Clients"]
-        CLI["CLI\ndebug-mind diagnose"]
-        Web["Web UI\nGradio"]
-        MCPC["MCP Client\nClaude Code / Desktop"]
-    end
-
-    subgraph AgentLayer["Agent Layer — ReAct Loop"]
-        Agent["DiagnosticAgent\nreason → act → observe"]
-        Budget["Budget Guard\ntoken / cost / wall-clock"]
-        LLM["LLM Provider\nClaude · GPT-4o"]
-    end
-
-    subgraph SkillsLayer["Skills Layer"]
-        Code["Code Search\nripgrep / tree-sitter"]
-        File["File Reader"]
-    end
-
-    subgraph MemoryLayer["Memory Layer"]
-        Search["Hybrid Search\n0.75 × semantic vector + 0.25 × lexical\nverified cases prioritized · hit_count log-weighted"]
-        Embed["Embedding\nONNX · OpenAI · BGE · Voyage"]
-    end
-
-    subgraph StorageLayer["Storage Layer — Dual Write"]
-        SQLite[("SQLite\ndefault backend")]
-        Chroma[("ChromaDB\noptional, HNSW")]
-        MD["Markdown Files\nsource of truth, git-trackable"]
-    end
-
-    Clients --> Agent
-    Agent <--> Budget
-    Agent <--> LLM
-    Agent --> Code
-    Agent --> File
-    Agent --> Search
-    Search --> Embed
-    Embed --> SQLite
-    Embed --> Chroma
-    Search <--> MD
-    MD -.->|"rebuild index"| SQLite
-    SQLite -.->|"hit_count feedback\nimproves ranking"| Search
-```
+<p align="center">
+  <img src="docs/架构图.png" alt="DebugMind Architecture" width="900" />
+</p>
 
 Five independent layers, each replaceable:
 
