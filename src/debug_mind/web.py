@@ -6,7 +6,9 @@ Optional dependency: pip install gradio
 
 from __future__ import annotations
 
+import json
 import os
+import time
 from pathlib import Path
 
 from debug_mind.memory.store import MemoryStore
@@ -23,11 +25,257 @@ _EXAMPLE_QUERIES = [
     "CORS 跨域预检请求被拦截",
 ]
 
+# ── Pre-recorded demo scenarios (no API key needed) ────────────────────────
+_DEMO_SCENARIOS = [
+    {
+        "id": "redis_npe",
+        "title": "🔴 Redis 连接池耗尽 → NullPointerException",
+        "description": "高峰期 UserService.login 出现 NullPointerException，Redis 日志显示连接超时，所有请求卡死约 30s",
+        "environment": {"language": "Java", "framework": "Spring Boot 3.2", "redis": "6.2"},
+        "steps": [
+            ("thinking", "开始分析 Bug 报告...首先搜索历史记忆库中的相似案例。"),
+            ("tool_call", {"name": "search_memory", "input": {"query": "redis 连接池耗尽 NullPointerException", "top_k": 3}}),
+            ("tool_result", {"name": "search_memory", "result": {
+                "found": 2,
+                "cases": [
+                    {"title": "Redis maxActive 未配置导致 NPE", "score": 0.87, "root_cause": "连接池 maxActive 默认值过小（8），高并发时耗尽", "verified": True, "hit_count": 5},
+                    {"title": "Jedis 连接未释放导致泄漏", "score": 0.71, "root_cause": "try-with-resource 未正确关闭连接", "verified": False, "hit_count": 2},
+                ],
+            }}),
+            ("thinking", "✅ 命中 2 条历史案例。相似度最高的案例（0.87）已被验证并命中 5 次——这是一个高置信度的参考。\n\n根据案例 #1，根因几乎可以确定：`maxActive` 默认值为 8，在高并发下耗尽后 `getConnection()` 返回 null，代码未做 null 检查直接调用导致 NPE。"),
+            ("tool_call", {"name": "save_to_memory", "input": {
+                "title": "高峰期 Redis 连接池耗尽导致 NPE",
+                "severity": "high",
+                "tags": ["redis", "npe", "connection-pool", "spring-boot"],
+                "root_cause": "Redis maxActive=8 在高并发下耗尽，getConnection() 返回 null 未被处理",
+                "fix_suggestion": "spring.redis.jedis.pool.max-active=50, max-wait=2000ms",
+            }}),
+            ("tool_result", {"name": "save_to_memory", "result": {"saved": True, "case_id": "a3f2b1c8"}}),
+            ("done", {
+                "root_cause": "Redis 连接池 `maxActive` 配置过小（默认 8），高并发时连接耗尽，`Jedis.getConnection()` 返回 null，未做 null 检查直接调用导致 NPE。",
+                "fix_suggestion": (
+                    "**方案 1（推荐）：** 调大连接池\n"
+                    "```yaml\nspring:\n  redis:\n    jedis:\n      pool:\n        max-active: 50\n        max-wait: 2000ms\n        max-idle: 20\n```\n\n"
+                    "**方案 2：** 在代码层加 null guard\n"
+                    "```java\nJedis jedis = pool.getResource();\nif (jedis == null) throw new ServiceUnavailableException(\"Redis unavailable\");\ntry { ... } finally { jedis.close(); }\n```"
+                ),
+                "confidence": 0.92,
+                "similar_cases_found": 2,
+            }),
+        ],
+    },
+    {
+        "id": "kafka_lag",
+        "title": "🟠 Kafka 消费者 Lag 持续增长",
+        "description": "订单服务消费者 lag 超过 10 万条，消费速度明显低于生产速度，SQL Timeout 告警频发",
+        "environment": {"language": "Java", "kafka": "3.5", "db": "MySQL 8.0", "consumer-threads": "32"},
+        "steps": [
+            ("thinking", "Kafka 消费积压问题通常有三类根因：消费者处理慢、Rebalance 频繁、或下游依赖瓶颈。先搜索历史案例缩小范围。"),
+            ("tool_call", {"name": "search_memory", "input": {"query": "kafka consumer lag 积压 消费慢 DB timeout", "top_k": 3}}),
+            ("tool_result", {"name": "search_memory", "result": {
+                "found": 1,
+                "cases": [
+                    {"title": "Kafka 消费者 DB 连接池瓶颈", "score": 0.79, "root_cause": "DB 连接池大小 < consumer 线程数，导致消费线程阻塞等待连接", "verified": True, "hit_count": 3},
+                ],
+            }}),
+            ("thinking", "日志中同时出现 `SQLTimeoutException: Timeout waiting for connection from pool`，说明瓶颈在 **数据库连接层** 而非 Kafka 本身。\n\n历史案例（0.79）印证：消费线程数（32）远大于 DB 连接池上限（默认 10），导致大量线程阻塞等待连接，消费速率骤降。"),
+            ("tool_call", {"name": "save_to_memory", "input": {
+                "title": "Kafka 消费积压：DB 连接池瓶颈",
+                "severity": "high",
+                "tags": ["kafka", "lag", "db", "connection-pool", "hikari"],
+                "root_cause": "consumer 线程数（32）> HikariCP 连接池上限（10），线程争抢连接导致消费阻塞",
+                "fix_suggestion": "maximum-pool-size >= consumer 线程数，或改批量消费",
+            }}),
+            ("tool_result", {"name": "save_to_memory", "result": {"saved": True, "case_id": "b7e4c219"}}),
+            ("done", {
+                "root_cause": "Kafka consumer 并发线程数（32）远超 HikariCP 连接池上限（默认 10），大量线程阻塞在 `getConnection()` 等待，消费吞吐量降至约 1/3。",
+                "fix_suggestion": (
+                    "**方案 1（最快）：** 调大 DB 连接池\n"
+                    "```yaml\nspring:\n  datasource:\n    hikari:\n      maximum-pool-size: 40  # >= consumer 线程数\n      connection-timeout: 3000\n```\n\n"
+                    "**方案 2（更优）：** 改为批量消费减少 DB 压力\n"
+                    "```java\n@KafkaListener(topics = \"orders\", batch = \"true\")\npublic void consume(List<OrderEvent> events) {\n    orderRepo.saveAll(events);  // 批量写一次\n}\n```"
+                ),
+                "confidence": 0.88,
+                "similar_cases_found": 1,
+            }),
+        ],
+    },
+]
+
 
 def _get_memory(memory_dir: str | None = None) -> MemoryStore:
     mem_dir = memory_dir or os.environ.get("DEBUG_MIND_MEMORY_DIR", "memory")
     return MemoryStore(memory_dir=Path(mem_dir))
 
+
+# ── Demo streaming helpers ─────────────────────────────────────────────────
+
+def _fmt_tool_call(name: str, inp: dict) -> str:
+    inp_short = json.dumps(inp, ensure_ascii=False)
+    if len(inp_short) > 100:
+        inp_short = inp_short[:97] + "..."
+    return f"🔧 **`{name}`** `{inp_short}`"
+
+
+def _fmt_tool_result(name: str, result: dict) -> str:
+    if name == "search_memory":
+        found = result.get("found", 0)
+        cases = result.get("cases", [])
+        if not cases:
+            return "→ ⚪ 未找到相关案例（首次遇到此类 Bug）"
+        top = cases[0]
+        badge = "✅ 已验证" if top.get("verified") else "⬜ 未验证"
+        return f"→ 找到 **{found}** 条，最相似: **{top['title']}** 相似度 `{top['score']:.2f}` {badge} 命中 {top.get('hit_count', 0)} 次"
+    elif name == "save_to_memory":
+        cid = result.get("case_id", "?")
+        return f"→ ✅ 已写入记忆库 `#{cid}`"
+    return f"→ `{json.dumps(result, ensure_ascii=False)[:120]}`"
+
+
+def _render_demo_state(scenario: dict, steps_done: list[str], done: bool = False) -> str:
+    env_str = " · ".join(f"`{k}={v}`" for k, v in scenario["environment"].items())
+    out = (
+        f"## {scenario['title']}\n\n"
+        f"**Bug 描述：** {scenario['description']}\n\n"
+        f"**环境：** {env_str}\n\n"
+        f"---\n\n"
+        f"### 🤖 Agent 推理过程\n\n"
+    )
+    if steps_done:
+        for i, s in enumerate(steps_done, 1):
+            out += f"**{i}.** {s}\n\n"
+    if not done:
+        out += "_⏳ 分析中..._"
+    return out
+
+
+def _do_demo_stream(scenario_id: str):
+    """Generator: replay a pre-recorded demo scenario step by step."""
+    scenario = next((s for s in _DEMO_SCENARIOS if s["id"] == scenario_id), None)
+    if scenario is None:
+        yield "请选择一个演示场景。"
+        return
+
+    steps_done: list[str] = []
+    yield _render_demo_state(scenario, steps_done)
+
+    for etype, data in scenario["steps"]:
+        time.sleep(0.9)
+
+        if etype == "thinking":
+            steps_done.append(f"💭 {data}")
+            yield _render_demo_state(scenario, steps_done)
+
+        elif etype == "tool_call":
+            steps_done.append(_fmt_tool_call(data["name"], data["input"]))
+            yield _render_demo_state(scenario, steps_done)
+
+        elif etype == "tool_result":
+            formatted = _fmt_tool_result(data["name"], data["result"])
+            steps_done.append(f"&nbsp;&nbsp;&nbsp;&nbsp;{formatted}")
+            yield _render_demo_state(scenario, steps_done)
+
+        elif etype == "done":
+            diag = data
+            steps_done.append("✅ 诊断完成，结果已写入记忆库")
+            out = _render_demo_state(scenario, steps_done, done=True)
+            out += (
+                "\n---\n\n"
+                "### 诊断结果\n\n"
+                f"**根因：** {diag['root_cause']}\n\n"
+                f"**修复建议：**\n\n{diag['fix_suggestion']}\n\n"
+                f"**置信度：** `{diag['confidence']:.0%}` &nbsp;|&nbsp; "
+                f"**相似案例：** {diag['similar_cases_found']} 条\n\n"
+                "> 💡 此次诊断结果已写入记忆库。下次遇到相似 Bug，Agent 会直接命中此案例，诊断速度大幅提升。"
+            )
+            yield out
+            return
+
+
+# ── Real AI diagnose (streaming) ───────────────────────────────────────────
+
+def _do_diagnose_stream(description: str, error_log: str, env_text: str, api_key: str, memory: MemoryStore):
+    """Generator: run a real diagnosis and stream agent events as formatted markdown."""
+    if not description.strip():
+        yield "⚠️ 请输入 Bug 描述。"
+        return
+
+    key = api_key.strip() or os.environ.get("ANTHROPIC_API_KEY", "")
+    if not key:
+        yield (
+            "⚠️ **需要 API Key。**\n\n"
+            "请在上方输入你的 Anthropic API Key 以启用 AI 诊断。\n"
+            "获取地址: [console.anthropic.com](https://console.anthropic.com)\n\n"
+            "**提示：** 先在 **🎬 演示** 或 **🔍 搜索** 标签页体验，无需 Key。"
+        )
+        return
+
+    os.environ["ANTHROPIC_API_KEY"] = key
+
+    env: dict[str, str] = {}
+    if env_text.strip():
+        for line in env_text.strip().split("\n"):
+            if "=" in line:
+                k, v = line.split("=", 1)
+                env[k.strip()] = v.strip()
+
+    from debug_mind.agent import DiagnosticAgent
+
+    agent = DiagnosticAgent(memory=memory)
+
+    steps: list[str] = []
+    thinking_buf = ""
+    current_turn = 0
+
+    def _render(final_result: DiagnosisResult | None = None) -> str:
+        header = (
+            "## 🤖 AI 诊断进行中...\n\n"
+            if final_result is None
+            else "## 诊断结果\n\n"
+        )
+        out = header
+        if steps:
+            out += "### 推理步骤\n\n"
+            for i, s in enumerate(steps, 1):
+                out += f"**{i}.** {s}\n\n"
+            out += "---\n\n"
+        if thinking_buf:
+            out += "### Agent 分析\n\n" + thinking_buf + "\n\n---\n\n"
+        if final_result:
+            conf_str = f"{final_result.confidence:.0%}" if final_result.confidence > 0 else "部分"
+            out += (
+                f"**根因：** {final_result.root_cause}\n\n"
+                f"**修复建议：** {final_result.fix_suggestion}\n\n"
+                f"**置信度：** `{conf_str}` &nbsp;|&nbsp; **相似案例：** {final_result.similar_cases_found} 条"
+            )
+        elif not steps and not thinking_buf:
+            out += "_⏳ 连接 AI 中..._"
+        return out
+
+    yield _render()
+
+    try:
+        for event_type, data in agent.diagnose_stream(description, error_log, env):
+            if event_type == "turn":
+                current_turn = data["turn"]
+            elif event_type == "thinking":
+                thinking_buf += data
+                yield _render()
+            elif event_type == "tool_call":
+                steps.append(_fmt_tool_call(data["name"], data["input"]))
+                yield _render()
+            elif event_type == "tool_result":
+                formatted = _fmt_tool_result(data["name"], data["result"])
+                steps.append(f"&nbsp;&nbsp;&nbsp;&nbsp;{formatted}")
+                yield _render()
+            elif event_type == "done":
+                yield _render(final_result=data)
+                return
+    except Exception as e:
+        yield f"❌ 诊断失败: {e}"
+
+
+# ── Memory operations ──────────────────────────────────────────────────────
 
 def launch_ui(port: int = 7860, share: bool = False, memory_dir: str | None = None) -> None:
     """Launch the Gradio web interface."""
@@ -39,7 +287,6 @@ def launch_ui(port: int = 7860, share: bool = False, memory_dir: str | None = No
 
     memory = _get_memory(memory_dir)
 
-    # ── Search Memory tab ─────────────────────────────────────────
     def do_search(query: str, top_k: int = 5):
         if not query.strip():
             return "请输入搜索关键词。"
@@ -77,52 +324,9 @@ def launch_ui(port: int = 7860, share: bool = False, memory_dir: str | None = No
             lines.append(f"- {badge} {severity_emoji} **{c.title}** — `{c.id}`")
         return "\n".join(lines)
 
-    # ── Diagnose tab ──────────────────────────────────────────────
-    def do_diagnose(description: str, error_log: str, env_text: str, api_key: str):
-        if not description.strip():
-            return "⚠️ 请输入 Bug 描述。"
-        key = api_key.strip() or os.environ.get("ANTHROPIC_API_KEY", "")
-        if not key:
-            return (
-                "⚠️ **需要 API Key。**\n\n"
-                "请在上方输入你的 Anthropic API Key 以启用 AI 诊断。\n"
-                "获取地址: [console.anthropic.com](https://console.anthropic.com)\n\n"
-                "**提示:** 你可以先在 **🔍 搜索记忆库** 标签页中浏览知识库，无需 API Key。"
-            )
-        os.environ["ANTHROPIC_API_KEY"] = key
-        from debug_mind.agent import DiagnosticAgent
-
-        env: dict[str, str] = {}
-        if env_text.strip():
-            for line in env_text.strip().split("\n"):
-                if "=" in line:
-                    k, v = line.split("=", 1)
-                    env[k.strip()] = v.strip()
-        try:
-            agent = DiagnosticAgent(memory=memory)
-            result: DiagnosisResult = agent.diagnose(
-                description, error_log=error_log, environment=env
-            )
-        except Exception as e:
-            return f"❌ 诊断失败: {e}"
-
-        steps_md = "\n".join(f"{i}. {s}" for i, s in enumerate(result.diagnosis_steps, 1))
-        return (
-            f"## 诊断结果\n\n"
-            f"**根因:** {result.root_cause}\n\n"
-            f"**修复建议:** {result.fix_suggestion}\n\n"
-            f"**置信度:** {result.confidence:.0%} | "
-            f"**相似案例数:** {result.similar_cases_found}\n\n"
-            f"**诊断步骤:**\n{steps_md}"
-        )
-
-    # ── Stats tab ─────────────────────────────────────────────────
     def do_stats():
         s = memory.stats()
         top_tags_md = " · ".join(f"`{tag}` ({cnt})" for tag, cnt in s.top_tags[:8])
-        severity_md = " | ".join(
-            f"{k}: {v}" for k, v in sorted(s.by_severity.items(), key=lambda x: -x[1])
-        )
         severity_labels = {"critical": "严重", "high": "高", "medium": "中", "low": "低"}
         severity_cn = " | ".join(
             f"{severity_labels.get(k, k)}: {v}"
@@ -137,20 +341,43 @@ def launch_ui(port: int = 7860, share: bool = False, memory_dir: str | None = No
             f"**热门标签:** {top_tags_md or '—'}"
         )
 
-    # ── Build UI ──────────────────────────────────────────────────
+    # ── Build UI ─────────────────────────────────────────────────────────
     with gr.Blocks(
         title="DebugMind — AI Bug 诊断智能体",
         theme=gr.themes.Soft(),
     ) as app:
         gr.Markdown(
             """# 🧠 DebugMind
-**记忆增强的 AI Bug 诊断智能体**
+**记忆增强的 AI Bug 诊断智能体** — 每次诊断都写入知识库，见过的 Bug 越多，下次越快
 
-每次诊断都会存入知识库，见过的 Bug 越多，下次诊断越快。
-**🔍 搜索记忆库** 标签页无需 API Key，点击下方示例即可体验。
+> **🎬 演示** 无需 API Key | **🤖 AI 诊断** 需要 Anthropic Key | **🔍 搜索** 直接检索知识库
 """
         )
 
+        # ── Tab 1: Demo ───────────────────────────────────────────────
+        with gr.Tab("🎬 演示"):
+            gr.Markdown(
+                "选择一个预录场景，观看 Agent 完整推理过程：**搜索记忆 → 分析 → 写回记忆库**。无需 API Key。"
+            )
+            scenario_labels = [s["title"] for s in _DEMO_SCENARIOS]
+            scenario_radio = gr.Radio(
+                choices=scenario_labels,
+                value=scenario_labels[0],
+                label="选择演示场景",
+            )
+            demo_btn = gr.Button("▶ 开始演示", variant="primary")
+            demo_out = gr.Markdown(value="点击「开始演示」查看 Agent 推理过程。")
+
+            def _run_demo(label: str):
+                sid = next(
+                    (s["id"] for s in _DEMO_SCENARIOS if s["title"] == label),
+                    _DEMO_SCENARIOS[0]["id"],
+                )
+                yield from _do_demo_stream(sid)
+
+            demo_btn.click(fn=_run_demo, inputs=[scenario_radio], outputs=demo_out)
+
+        # ── Tab 2: Search ─────────────────────────────────────────────
         with gr.Tab("🔍 搜索记忆库"):
             gr.Markdown(
                 "搜索历史 Bug 诊断知识库。"
@@ -185,10 +412,10 @@ def launch_ui(port: int = 7860, share: bool = False, memory_dir: str | None = No
             list_out = gr.Markdown()
             list_btn.click(fn=do_list, inputs=[limit], outputs=list_out)
 
+        # ── Tab 3: AI Diagnose (streaming) ────────────────────────────
         with gr.Tab("🤖 AI 诊断"):
             gr.Markdown(
-                "使用 AI 智能体诊断 Bug。需要 **Anthropic API Key**。"
-                "智能体会先搜索记忆库，再结合上下文分析根因。"
+                "输入 Bug 信息，AI Agent 会实时展示推理过程：**搜索记忆 → 分析日志 → 输出根因 → 写回记忆**。需要 Anthropic API Key。"
             )
             api_key = gr.Textbox(
                 label="Anthropic API Key",
@@ -211,12 +438,17 @@ def launch_ui(port: int = 7860, share: bool = False, memory_dir: str | None = No
                 )
             diagnose_btn = gr.Button("🤖 开始诊断", variant="primary")
             diagnose_out = gr.Markdown()
+
+            def _run_diagnose(description, error_log, env_text, api_key_val):
+                yield from _do_diagnose_stream(description, error_log, env_text, api_key_val, memory)
+
             diagnose_btn.click(
-                fn=do_diagnose,
+                fn=_run_diagnose,
                 inputs=[desc, log, env, api_key],
                 outputs=diagnose_out,
             )
 
+        # ── Tab 4: Stats ──────────────────────────────────────────────
         with gr.Tab("📊 统计"):
             stats_btn = gr.Button("🔄 刷新统计")
             stats_out = gr.Markdown()
