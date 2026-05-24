@@ -26,6 +26,22 @@
   &nbsp;·&nbsp; Search Memory 无需 API Key，20 个真实案例即搜即用
 </p>
 
+<p align="center">
+  <img src="docs/hf-01-home.png" alt="DebugMind Web UI — 主界面" width="100%" />
+</p>
+
+<p align="center">
+  <img src="docs/hf-03-agent-reasoning.png" alt="Agent 推理过程 — 搜索记忆库、分析根因" width="100%" />
+</p>
+
+<p align="center">
+  <img src="docs/hf-04-diagnosis-verify.png" alt="诊断草稿 + 工程师验证闭环" width="100%" />
+</p>
+
+<p align="center">
+  <img src="docs/hf-06-search-results.png" alt="知识库搜索 — 混合检索结果展示" width="100%" />
+</p>
+
 ---
 
 ## 解决一个真实的痛点
