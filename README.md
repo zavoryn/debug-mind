@@ -224,10 +224,14 @@ npe, redis, spring-boot, connection-pool
 |------|------|---------|
 | **SQLite**（默认） | 无需额外安装 | 个人使用，< 5K 案例 |
 | **ChromaDB** | `pip install debug-mind[chroma]` | 团队共享，大规模知识库 |
+| **Milvus**（占位） | 待实现 — 见 [docs/MILVUS.md](docs/MILVUS.md) | > 1M 案例、多副本、共享 Milvus 基础设施 |
 
 ```bash
 DEBUG_MIND_BACKEND=chroma debug-mind rebuild
 ```
+
+> Milvus 接入点已经在 `src/debug_mind/memory/backends/milvus_backend.py` 留好，
+> StorageBackend 协议是可插拔的；什么时候真该切到 Milvus 见 [docs/MILVUS.md](docs/MILVUS.md)。
 
 ---
 
