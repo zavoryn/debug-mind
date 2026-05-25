@@ -807,10 +807,58 @@ def audit(since: str, op: str | None):
 @click.option(
     "--min-hit-at-5", default=None, type=float, help="Fail if hit@5 is below this threshold"
 )
-def eval(search_only: bool, case_id: str, json_path: str, min_hit_at_5: float | None):
-    """Evaluate memory retrieval quality against benchmark dataset."""
+@click.option(
+    "--trajectory",
+    is_flag=True,
+    help="Run end-to-end agent trajectory eval (steps/tokens/cost/correctness). "
+    "Requires ANTHROPIC_API_KEY — burns paid tokens.",
+)
+@click.option(
+    "--sample",
+    default=0,
+    type=int,
+    help="Limit trajectory eval to N first cases (default: all). Useful for smoke tests.",
+)
+def eval(
+    search_only: bool,
+    case_id: str,
+    json_path: str,
+    min_hit_at_5: float | None,
+    trajectory: bool,
+    sample: int,
+):
+    """Evaluate memory retrieval or agent trajectory quality."""
     from evaluation.dataset import load_all_cases, load_case
     from evaluation.benchmark import run_eval, format_results
+
+    if trajectory:
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            console.print("[red]Error: ANTHROPIC_API_KEY required for --trajectory eval.[/red]")
+            sys.exit(1)
+        from evaluation.trajectory_eval import (
+            run_trajectory_eval,
+            format_trajectory,
+        )
+
+        cases = [load_case(case_id)] if case_id else load_all_cases()
+        cases = [c for c in cases if c is not None]
+        if not cases:
+            console.print("[red]No benchmark cases found.[/red]")
+            sys.exit(1)
+
+        sample_n = sample if sample > 0 else None
+        console.print(
+            f"[bold blue]Running trajectory eval on "
+            f"{min(sample_n, len(cases)) if sample_n else len(cases)} case(s)...[/bold blue]"
+        )
+        results, agg, path = run_trajectory_eval(
+            cases=cases, sample=sample_n, api_key=api_key
+        )
+        console.print(format_trajectory(results, agg))
+        if path:
+            console.print(f"\n[dim]Wrote raw results to {path}[/dim]")
+        return
 
     if case_id:
         bc = load_case(case_id)

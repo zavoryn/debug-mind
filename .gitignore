@@ -15,3 +15,5 @@ memory/cases/
 memory/audit.jsonl
 .claude/
 *_PLAN.md
+private/
+evaluation/results/

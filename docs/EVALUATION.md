@@ -74,3 +74,54 @@ debug-mind eval --case npe-null-check
 # JSON output
 debug-mind eval --search-only --json
 ```
+
+## Trajectory evaluation (P6-4)
+
+Retrieval metrics tell you whether the memory store *could* surface the
+right past case. They do not tell you how the agent actually behaves when
+handed a fresh bug: how many tool calls it takes, how many tokens it
+burns, or whether it arrives at a correct diagnosis. Trajectory eval
+measures exactly that.
+
+```bash
+# Smoke test on 3 cases (burns paid Anthropic tokens)
+debug-mind eval --trajectory --sample 3
+
+# Full run on all benchmark cases
+debug-mind eval --trajectory
+```
+
+### Metrics captured per case
+
+| Field | Meaning |
+|---|---|
+| `steps` | Number of tool calls the agent made before finishing |
+| `tokens_input` / `tokens_output` | Cumulative tokens through the run |
+| `estimated_cost_usd` | Sum of input + output + cache tokens × current pricing table |
+| `time_seconds` | Wall-clock end-to-end |
+| `correct` | Keyword-match judge on the final root_cause + fix_suggestion (threshold 0.5) |
+| `correctness_score` | Fraction of expected keywords matched (0.0–1.0) |
+
+### Aggregate summary
+
+The aggregate row in the console output (and in
+`evaluation/results/trajectory_<ts>.json`) reports:
+
+- `correctness_rate` — fraction of cases judged correct
+- `mean_steps`, `p50_steps`, `p95_steps` — distribution over successful runs
+- `mean_tokens_in`, `mean_tokens_out`, `mean_cost_usd`, `total_cost_usd`
+- `mean_time_seconds`
+
+### Important caveats
+
+1. **This is not run in CI** — each invocation hits a paid LLM API. Run
+   it manually before a release or when a meaningful agent change lands.
+2. **Correctness judging is keyword-based today.** It rewards diagnoses
+   that mention the expected root-cause vocabulary; it cannot tell a
+   shallow "I matched keywords" answer from a deeply correct one. An
+   LLM-as-judge implementation is the Phase 7 follow-up.
+3. **Pre-seeded memory.** Each run seeds a temp `MemoryStore` from
+   `evaluation/seed_cases/` so the agent has prior cases to retrieve.
+   That mirrors the production "cold start ≠ warm cache" gap; cold-cache
+   numbers will be much worse.
+
