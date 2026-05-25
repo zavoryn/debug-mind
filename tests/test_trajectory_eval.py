@@ -14,7 +14,6 @@ from evaluation.trajectory_eval import (
     aggregate,
     _percentile,
     judge_correctness,
-    run_trajectory,
 )
 
 
