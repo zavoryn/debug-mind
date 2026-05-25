@@ -115,9 +115,7 @@ def search_similar_bugs(
     from other silos if the local one is sparse.
     """
     memory = _get_memory(namespace)
-    results = memory.search(
-        query=query, top_k=top_k, fallback_namespaces=fallback_namespaces
-    )
+    results = memory.search(query=query, top_k=top_k, fallback_namespaces=fallback_namespaces)
 
     if not results:
         return json.dumps(

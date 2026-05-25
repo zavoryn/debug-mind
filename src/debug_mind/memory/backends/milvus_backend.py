@@ -78,15 +78,11 @@ class MilvusBackend(StorageBackend):
     def count(self) -> int:
         raise NotImplementedError(f"MilvusBackend.count — stub. See {_DOCS_URL}.")
 
-    def search(
-        self, query_embedding: list[float], top_k: int
-    ) -> list[dict[str, Any]]:
+    def search(self, query_embedding: list[float], top_k: int) -> list[dict[str, Any]]:
         raise NotImplementedError(f"MilvusBackend.search — stub. See {_DOCS_URL}.")
 
     def get_all_ids(self) -> list[str]:
-        raise NotImplementedError(
-            f"MilvusBackend.get_all_ids — stub. See {_DOCS_URL}."
-        )
+        raise NotImplementedError(f"MilvusBackend.get_all_ids — stub. See {_DOCS_URL}.")
 
     # ── Write ─────────────────────────────────────────────────────────
 
@@ -96,19 +92,13 @@ class MilvusBackend(StorageBackend):
         embeddings: list[list[float]],
         metadatas: list[dict[str, Any]],
     ) -> None:
-        raise NotImplementedError(
-            f"MilvusBackend.upsert — stub. See {_DOCS_URL}."
-        )
+        raise NotImplementedError(f"MilvusBackend.upsert — stub. See {_DOCS_URL}.")
 
     def delete(self, ids: list[str]) -> None:
-        raise NotImplementedError(
-            f"MilvusBackend.delete — stub. See {_DOCS_URL}."
-        )
+        raise NotImplementedError(f"MilvusBackend.delete — stub. See {_DOCS_URL}.")
 
     def rebuild(self) -> None:
-        raise NotImplementedError(
-            f"MilvusBackend.rebuild — stub. See {_DOCS_URL}."
-        )
+        raise NotImplementedError(f"MilvusBackend.rebuild — stub. See {_DOCS_URL}.")
 
     def close(self) -> None:
         # No resources held by the stub.

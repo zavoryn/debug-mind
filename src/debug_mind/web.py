@@ -49,32 +49,67 @@ _DEMO_SCENARIOS = [
         # Visual steps for the pre-recorded animation
         "steps": [
             ("thinking", "开始分析 Bug 报告，首先检索历史记忆库中的相似案例。"),
-            ("tool_call", {"name": "search_memory", "input": {"query": "redis 连接池耗尽 NullPointerException", "top_k": 3}}),
-            ("tool_result", {"name": "search_memory", "result": {
-                "found": 2,
-                "cases": [
-                    {"title": "Redis maxActive 未配置导致 NPE", "score": 0.87, "root_cause": "连接池 maxActive 默认值过小（8），高并发时耗尽", "verified": True, "hit_count": 5},
-                    {"title": "Jedis 连接未释放导致泄漏", "score": 0.71, "root_cause": "try-with-resource 未关闭连接", "verified": False, "hit_count": 2},
-                ],
-            }}),
-            ("thinking", (
-                "✅ 命中 2 条历史案例，最高相似度 0.87（已验证，命中 5 次）。\n\n"
-                "根因几乎确定：`maxActive` 默认值 8 在高并发下耗尽，`getConnection()` 返回 null，"
-                "代码未做 null 检查直接调用导致 NPE。"
-            )),
+            (
+                "tool_call",
+                {
+                    "name": "search_memory",
+                    "input": {"query": "redis 连接池耗尽 NullPointerException", "top_k": 3},
+                },
+            ),
+            (
+                "tool_result",
+                {
+                    "name": "search_memory",
+                    "result": {
+                        "found": 2,
+                        "cases": [
+                            {
+                                "title": "Redis maxActive 未配置导致 NPE",
+                                "score": 0.87,
+                                "root_cause": "连接池 maxActive 默认值过小（8），高并发时耗尽",
+                                "verified": True,
+                                "hit_count": 5,
+                            },
+                            {
+                                "title": "Jedis 连接未释放导致泄漏",
+                                "score": 0.71,
+                                "root_cause": "try-with-resource 未关闭连接",
+                                "verified": False,
+                                "hit_count": 2,
+                            },
+                        ],
+                    },
+                },
+            ),
+            (
+                "thinking",
+                (
+                    "✅ 命中 2 条历史案例，最高相似度 0.87（已验证，命中 5 次）。\n\n"
+                    "根因几乎确定：`maxActive` 默认值 8 在高并发下耗尽，`getConnection()` 返回 null，"
+                    "代码未做 null 检查直接调用导致 NPE。"
+                ),
+            ),
             ("save_draft", None),  # handled specially: actually saves to memory
-            ("thinking", (
-                "⏳ **诊断草稿已保存（状态：未验证）**\n\n"
-                "系统不会自动标记为正确——需要工程师将修复方案应用到生产环境，"
-                "确认修复有效后再提升为「已验证」，未验证案例的搜索权重仅为已验证案例的 70%。"
-            )),
+            (
+                "thinking",
+                (
+                    "⏳ **诊断草稿已保存（状态：未验证）**\n\n"
+                    "系统不会自动标记为正确——需要工程师将修复方案应用到生产环境，"
+                    "确认修复有效后再提升为「已验证」，未验证案例的搜索权重仅为已验证案例的 70%。"
+                ),
+            ),
         ],
     },
     {
         "id": "kafka_lag",
         "title": "🟠 Kafka 消费者 Lag 持续增长",
         "description": "订单服务消费者 lag 超过 10 万条，消费速度明显低于生产速度，SQL Timeout 告警频发",
-        "environment": {"language": "Java", "kafka": "3.5", "db": "MySQL 8.0", "consumer-threads": "32"},
+        "environment": {
+            "language": "Java",
+            "kafka": "3.5",
+            "db": "MySQL 8.0",
+            "consumer-threads": "32",
+        },
         "bug_case": {
             "title": "Kafka 消费积压：HikariCP 连接池瓶颈",
             "symptoms": "Kafka consumer lag 持续增长超过 10 万条，伴随 SQLTimeoutException: Timeout waiting for connection from pool",
@@ -88,26 +123,53 @@ _DEMO_SCENARIOS = [
             "tags": ["kafka", "lag", "db", "connection-pool", "hikari"],
         },
         "steps": [
-            ("thinking", "Kafka 消费积压通常有三类根因：消费慢、Rebalance 频繁、下游依赖瓶颈。先搜索历史案例缩小范围。"),
-            ("tool_call", {"name": "search_memory", "input": {"query": "kafka consumer lag 积压 消费慢 DB timeout", "top_k": 3}}),
-            ("tool_result", {"name": "search_memory", "result": {
-                "found": 1,
-                "cases": [
-                    {"title": "Kafka 消费者 DB 连接池瓶颈", "score": 0.79, "root_cause": "DB 连接池大小 < consumer 线程数，消费线程阻塞等待连接", "verified": True, "hit_count": 3},
-                ],
-            }}),
-            ("thinking", (
-                "日志同时出现 `SQLTimeoutException: Timeout waiting for connection from pool`，"
-                "说明瓶颈在 **数据库连接层** 而非 Kafka 本身。\n\n"
-                "历史案例（相似度 0.79）印证：consumer 线程数（32）> HikariCP 上限（10），"
-                "线程争抢连接，消费速率骤降至约 1/3。"
-            )),
+            (
+                "thinking",
+                "Kafka 消费积压通常有三类根因：消费慢、Rebalance 频繁、下游依赖瓶颈。先搜索历史案例缩小范围。",
+            ),
+            (
+                "tool_call",
+                {
+                    "name": "search_memory",
+                    "input": {"query": "kafka consumer lag 积压 消费慢 DB timeout", "top_k": 3},
+                },
+            ),
+            (
+                "tool_result",
+                {
+                    "name": "search_memory",
+                    "result": {
+                        "found": 1,
+                        "cases": [
+                            {
+                                "title": "Kafka 消费者 DB 连接池瓶颈",
+                                "score": 0.79,
+                                "root_cause": "DB 连接池大小 < consumer 线程数，消费线程阻塞等待连接",
+                                "verified": True,
+                                "hit_count": 3,
+                            },
+                        ],
+                    },
+                },
+            ),
+            (
+                "thinking",
+                (
+                    "日志同时出现 `SQLTimeoutException: Timeout waiting for connection from pool`，"
+                    "说明瓶颈在 **数据库连接层** 而非 Kafka 本身。\n\n"
+                    "历史案例（相似度 0.79）印证：consumer 线程数（32）> HikariCP 上限（10），"
+                    "线程争抢连接，消费速率骤降至约 1/3。"
+                ),
+            ),
             ("save_draft", None),
-            ("thinking", (
-                "⏳ **诊断草稿已保存（状态：未验证）**\n\n"
-                "等待工程师将 `maximum-pool-size` 调整为 40 并重启服务，"
-                "观察 lag 是否下降后再来确认修复效果。"
-            )),
+            (
+                "thinking",
+                (
+                    "⏳ **诊断草稿已保存（状态：未验证）**\n\n"
+                    "等待工程师将 `maximum-pool-size` 调整为 40 并重启服务，"
+                    "观察 lag 是否下降后再来确认修复效果。"
+                ),
+            ),
         ],
     },
 ]
@@ -119,6 +181,7 @@ def _get_memory(memory_dir: str | None = None) -> MemoryStore:
 
 
 # ── Formatting helpers ─────────────────────────────────────────────────────
+
 
 def _fmt_tool_call(name: str, inp: dict) -> str:
     inp_short = json.dumps(inp, ensure_ascii=False)
@@ -162,6 +225,7 @@ def _render_demo_state(scenario: dict, steps_done: list[str], finished: bool = F
 
 
 # ── Demo streaming ─────────────────────────────────────────────────────────
+
 
 def _do_demo_stream(scenario_id: str, memory: MemoryStore):
     """Generator: replay a pre-recorded scenario step by step, actually saving to memory.
@@ -236,7 +300,10 @@ def _do_demo_stream(scenario_id: str, memory: MemoryStore):
 
 # ── Real AI diagnose (streaming) ───────────────────────────────────────────
 
-def _do_diagnose_stream(description: str, error_log: str, env_text: str, api_key: str, memory: MemoryStore):
+
+def _do_diagnose_stream(
+    description: str, error_log: str, env_text: str, api_key: str, memory: MemoryStore
+):
     """Generator: run a real diagnosis and stream agent events as formatted markdown.
 
     Yields (markdown, case_id) tuples. case_id is "" until diagnosis completes.
@@ -315,13 +382,18 @@ def _do_diagnose_stream(description: str, error_log: str, env_text: str, api_key
                 yield _render(), "", gr.update(visible=False)
             elif event_type == "done":
                 final_case_id = data.case_id if data.case_id != "unknown" else ""
-                yield _render(final_result=data), final_case_id, gr.update(visible=bool(final_case_id))
+                yield (
+                    _render(final_result=data),
+                    final_case_id,
+                    gr.update(visible=bool(final_case_id)),
+                )
                 return
     except Exception as e:
         yield f"❌ 诊断失败: {e}", "", gr.update(visible=False)
 
 
 # ── Memory operations ──────────────────────────────────────────────────────
+
 
 def _do_verify(case_id: str, correct: bool, memory: MemoryStore):
     """Mark a case as verified or rejected. Returns a status message."""
@@ -474,8 +546,7 @@ def launch_ui(port: int = 7860, share: bool = False, memory_dir: str | None = No
         # ── Tab 2: Search ─────────────────────────────────────────────
         with gr.Tab("🔍 搜索记忆库"):
             gr.Markdown(
-                "搜索历史 Bug 诊断知识库。"
-                "已验证案例（✅）搜索权重 ×1.0，未验证（⬜）×0.7。"
+                "搜索历史 Bug 诊断知识库。已验证案例（✅）搜索权重 ×1.0，未验证（⬜）×0.7。"
             )
             with gr.Row():
                 query = gr.Textbox(
@@ -543,7 +614,9 @@ def launch_ui(port: int = 7860, share: bool = False, memory_dir: str | None = No
             diag_verify_result = gr.Markdown(visible=False)
 
             def _run_diagnose(description, error_log, env_text, api_key_val):
-                yield from _do_diagnose_stream(description, error_log, env_text, api_key_val, memory)
+                yield from _do_diagnose_stream(
+                    description, error_log, env_text, api_key_val, memory
+                )
 
             diagnose_btn.click(
                 fn=_run_diagnose,
@@ -575,9 +648,7 @@ def launch_ui(port: int = 7860, share: bool = False, memory_dir: str | None = No
                 "可视化案例之间的关系（variant / caused_by / fixed_by / related）。"
                 "节点颜色：绿色 = 已验证，灰色 = 未验证。"
             )
-            graph_max_nodes = gr.Slider(
-                10, 200, value=50, step=10, label="最多节点数"
-            )
+            graph_max_nodes = gr.Slider(10, 200, value=50, step=10, label="最多节点数")
             graph_btn = gr.Button("🔄 刷新图谱", variant="primary")
             graph_out = gr.HTML()
 

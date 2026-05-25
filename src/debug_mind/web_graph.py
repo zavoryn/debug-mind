@@ -22,10 +22,10 @@ from debug_mind.observability.logger import get_logger
 _log = get_logger("web_graph")
 
 _RELATION_COLORS: dict[str, str] = {
-    "variant": "#3b82f6",     # blue   — same root cause, different surface
-    "caused_by": "#ef4444",   # red    — A → B causal chain
-    "fixed_by": "#10b981",    # green  — fix applied
-    "related": "#94a3b8",     # gray   — loose association
+    "variant": "#3b82f6",  # blue   — same root cause, different surface
+    "caused_by": "#ef4444",  # red    — A → B causal chain
+    "fixed_by": "#10b981",  # green  — fix applied
+    "related": "#94a3b8",  # gray   — loose association
 }
 
 _EMPTY_HTML = (
@@ -159,16 +159,10 @@ def _legend_html() -> str:
         "border-radius:50%;margin-right:6px;'></span>verified  "
         "<span style='display:inline-block;width:12px;height:12px;background:#94a3b8;"
         "border-radius:50%;margin-right:6px;'></span>unverified  "
-        "<b>关系：</b>" + "  ".join(parts) +
-        "</div>"
+        "<b>关系：</b>" + "  ".join(parts) + "</div>"
     )
 
 
 def _escape_html(text: Any) -> str:
     s = str(text)
-    return (
-        s.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-    )
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")

@@ -199,9 +199,7 @@ class TestRunTrajectorySmoke:
                 )
 
         # The agent module is imported lazily inside run_trajectory.
-        monkeypatch.setattr(
-            "debug_mind.agent.DiagnosticAgent", _StubAgent, raising=True
-        )
+        monkeypatch.setattr("debug_mind.agent.DiagnosticAgent", _StubAgent, raising=True)
 
         result = te.run_trajectory(case, tmp_path / "mem", api_key="fake")
         assert result.error is None

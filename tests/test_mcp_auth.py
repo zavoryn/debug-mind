@@ -175,9 +175,7 @@ class TestAuditCLI:
         from click.testing import CliRunner
         from debug_mind.cli import main
 
-        self._write_audit(
-            tmp_path / "mem" / "default" / "audit.jsonl", "delete", "test123"
-        )
+        self._write_audit(tmp_path / "mem" / "default" / "audit.jsonl", "delete", "test123")
 
         runner = CliRunner()
         result = runner.invoke(main, ["audit"])

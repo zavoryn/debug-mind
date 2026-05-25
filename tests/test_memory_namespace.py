@@ -84,9 +84,7 @@ class TestFallbackNamespaces:
 
         # team-x is empty — search with fallback to shared should hit
         team_x = MemoryStore(memory_dir=base, namespace="team-x")
-        results = team_x.search(
-            "kafka timeout", top_k=3, fallback_namespaces=["shared"]
-        )
+        results = team_x.search("kafka timeout", top_k=3, fallback_namespaces=["shared"])
         assert len(results) >= 1
         # All hits should be tagged with origin namespace
         assert all(r.from_namespace == "shared" for r in results)
@@ -102,9 +100,7 @@ class TestFallbackNamespaces:
         for i in range(4):
             local.save(_make_case(f"local kafka {i}", "local fix"))
 
-        results = local.search(
-            "kafka", top_k=3, fallback_namespaces=["shared"]
-        )
+        results = local.search("kafka", top_k=3, fallback_namespaces=["shared"])
         # All results should be local — fallback only kicks in when len < 3
         assert len(results) == 3
         assert all(r.from_namespace is None for r in results)

@@ -206,11 +206,18 @@ def aggregate(results: list[TrajectoryResult]) -> TrajectoryAggregate:
     total = len(results)
     if total == 0:
         return TrajectoryAggregate(
-            total=0, correct_count=0, correctness_rate=0.0,
-            mean_steps=0.0, p50_steps=0.0, p95_steps=0.0,
-            mean_tokens_in=0.0, mean_tokens_out=0.0,
-            mean_cost_usd=0.0, total_cost_usd=0.0,
-            mean_time_seconds=0.0, error_count=0,
+            total=0,
+            correct_count=0,
+            correctness_rate=0.0,
+            mean_steps=0.0,
+            p50_steps=0.0,
+            p95_steps=0.0,
+            mean_tokens_in=0.0,
+            mean_tokens_out=0.0,
+            mean_cost_usd=0.0,
+            total_cost_usd=0.0,
+            mean_time_seconds=0.0,
+            error_count=0,
         )
 
     successful = [r for r in results if r.error is None]
@@ -279,9 +286,7 @@ def run_trajectory_eval(
     return results, agg, json_path
 
 
-def _write_results_json(
-    results: list[TrajectoryResult], agg: TrajectoryAggregate
-) -> Path | None:
+def _write_results_json(results: list[TrajectoryResult], agg: TrajectoryAggregate) -> Path | None:
     try:
         RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     except OSError:
@@ -306,9 +311,7 @@ def _write_results_json(
 # ── Formatting ────────────────────────────────────────────────────────────
 
 
-def format_trajectory(
-    results: list[TrajectoryResult], agg: TrajectoryAggregate
-) -> str:
+def format_trajectory(results: list[TrajectoryResult], agg: TrajectoryAggregate) -> str:
     """Render results as a Markdown table for the console."""
     lines = ["", "## Trajectory eval results", ""]
     lines.append("| case | steps | tokens (in/out) | cost (USD) | time (s) | correct |")
@@ -330,14 +333,10 @@ def format_trajectory(
         f"- total: **{agg.total}** | correct: **{agg.correct_count}** "
         f"({agg.correctness_rate:.0%}) | errors: {agg.error_count}"
     )
-    lines.append(
-        f"- steps: mean **{agg.mean_steps}**, p50 {agg.p50_steps}, p95 {agg.p95_steps}"
-    )
+    lines.append(f"- steps: mean **{agg.mean_steps}**, p50 {agg.p50_steps}, p95 {agg.p95_steps}")
     lines.append(
         f"- tokens (mean): in **{agg.mean_tokens_in:.0f}**, out **{agg.mean_tokens_out:.0f}**"
     )
-    lines.append(
-        f"- cost: mean **${agg.mean_cost_usd:.4f}** / total **${agg.total_cost_usd:.4f}**"
-    )
+    lines.append(f"- cost: mean **${agg.mean_cost_usd:.4f}** / total **${agg.total_cost_usd:.4f}**")
     lines.append(f"- time: mean **{agg.mean_time_seconds:.1f}s**")
     return "\n".join(lines)

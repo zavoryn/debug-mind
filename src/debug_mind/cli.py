@@ -852,9 +852,7 @@ def eval(
             f"[bold blue]Running trajectory eval on "
             f"{min(sample_n, len(cases)) if sample_n else len(cases)} case(s)...[/bold blue]"
         )
-        results, agg, path = run_trajectory_eval(
-            cases=cases, sample=sample_n, api_key=api_key
-        )
+        results, agg, path = run_trajectory_eval(cases=cases, sample=sample_n, api_key=api_key)
         console.print(format_trajectory(results, agg))
         if path:
             console.print(f"\n[dim]Wrote raw results to {path}[/dim]")

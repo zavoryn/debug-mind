@@ -86,9 +86,7 @@ class SkillRegistry:
             skill = self.get(n)
             if skill is None:
                 available = ", ".join(sorted(self._skills.keys()))
-                raise ValueError(
-                    f"Unknown skill: {n!r}. Available skills: {available}"
-                )
+                raise ValueError(f"Unknown skill: {n!r}. Available skills: {available}")
             loaded.append(skill)
         return loaded
 

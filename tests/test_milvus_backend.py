@@ -23,9 +23,7 @@ class TestMilvusStub:
         assert backend.port == 19530
         assert backend.collection == "debug_mind_cases"
 
-    def test_initialize_without_pymilvus_raises_clear_import_error(
-        self, monkeypatch
-    ):
+    def test_initialize_without_pymilvus_raises_clear_import_error(self, monkeypatch):
         # Force the import to fail even if the dev box has pymilvus installed.
         # We use the standard sys.modules trick: set the name to None so the
         # next `import pymilvus` raises ImportError.
