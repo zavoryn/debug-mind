@@ -122,6 +122,13 @@ class SearchResult(BaseModel):
 
     case: BugCase
     score: float = Field(description="Similarity score [0, 1], higher = more similar")
+    from_namespace: str | None = Field(
+        default=None,
+        description=(
+            "Origin namespace when this result came from a fallback namespace "
+            "(populated only when MemoryStore.search received fallback_namespaces)."
+        ),
+    )
 
 
 class MemoryStats(BaseModel):

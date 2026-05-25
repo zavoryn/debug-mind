@@ -169,12 +169,15 @@ class TestAuditCLI:
             f.write(json.dumps(entry) + "\n")
 
     def test_audit_command_shows_entries(self, tmp_path, monkeypatch):
+        # P6-2: audit.jsonl now lives under <memory>/<namespace>/audit.jsonl
         monkeypatch.setenv("DEBUG_MIND_MEMORY_DIR", str(tmp_path / "mem"))
 
         from click.testing import CliRunner
         from debug_mind.cli import main
 
-        self._write_audit(tmp_path / "mem" / "audit.jsonl", "delete", "test123")
+        self._write_audit(
+            tmp_path / "mem" / "default" / "audit.jsonl", "delete", "test123"
+        )
 
         runner = CliRunner()
         result = runner.invoke(main, ["audit"])
@@ -187,7 +190,7 @@ class TestAuditCLI:
         from click.testing import CliRunner
         from debug_mind.cli import main
 
-        audit_path = tmp_path / "mem" / "audit.jsonl"
+        audit_path = tmp_path / "mem" / "default" / "audit.jsonl"
         for op in ["save", "delete", "verify"]:
             self._write_audit(audit_path, op, f"case-{op}")
 

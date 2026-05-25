@@ -143,8 +143,11 @@ class TestToolSchemaSingleSource:
         for mcp_name, schema_name in pairs:
             mcp_fn = getattr(mcp_server, mcp_name)
             mcp_params = set(inspect.signature(mcp_fn).parameters.keys())
-            # Exclude auth_token added by P2-5 MCP auth
-            mcp_params.discard("auth_token")
+            # Exclude transport-layer params not part of the agent-facing schema:
+            #   auth_token (P2-5)
+            #   namespace / fallback_namespaces (P6-2 — deployment scope, not LLM choice)
+            for transport_param in ("auth_token", "namespace", "fallback_namespaces"):
+                mcp_params.discard(transport_param)
 
             schema = next(t for t in MEMORY_TOOLS if t["name"] == schema_name)
             schema_props = set(schema["input_schema"]["properties"].keys())

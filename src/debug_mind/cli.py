@@ -49,11 +49,19 @@ load_dotenv()
 console = Console()
 
 
-def _get_memory() -> MemoryStore:
+def _get_memory(namespace: str | None = None) -> MemoryStore:
     # Read env var at call time — NOT module-level constant,
     # which is frozen at import time and immune to monkeypatch.setenv.
     memory_dir = os.environ.get("DEBUG_MIND_MEMORY_DIR", "memory")
-    return MemoryStore(memory_dir=memory_dir)
+    ns = namespace or os.environ.get("DEBUG_MIND_NAMESPACE", "default")
+    return MemoryStore(memory_dir=memory_dir, namespace=ns)
+
+
+def _parse_fallback_namespaces(value: str | None) -> list[str] | None:
+    if not value:
+        return None
+    parts = [p.strip() for p in value.split(",") if p.strip()]
+    return parts or None
 
 
 @click.group()
@@ -120,6 +128,17 @@ def _warn_invalid_env() -> None:
         "Default: memory + codebase (if --project). Run 'debug-mind skills' to list."
     ),
 )
+@click.option(
+    "--namespace",
+    "-N",
+    default=None,
+    help="Memory namespace (default 'default' or $DEBUG_MIND_NAMESPACE).",
+)
+@click.option(
+    "--fallback-namespaces",
+    default=None,
+    help="Comma-separated namespaces to consult if local ns returns < 3 hits.",
+)
 def diagnose(
     description: str,
     log: str,
@@ -131,6 +150,8 @@ def diagnose(
     max_tokens: int | None,
     no_retry: bool,
     skills: str | None,
+    namespace: str | None,
+    fallback_namespaces: str | None,
 ):
     """Diagnose a bug using AI + memory + optional codebase search."""
     # Parse environment
@@ -168,11 +189,12 @@ def diagnose(
         )
     )
 
-    memory = _get_memory()
+    memory = _get_memory(namespace=namespace)
+    fallback = _parse_fallback_namespaces(fallback_namespaces)
 
     # Step 1: Memory search
     with console.status("[bold blue]Searching memory for similar cases..."):
-        similar = memory.search(query=description, top_k=3)
+        similar = memory.search(query=description, top_k=3, fallback_namespaces=fallback)
 
     if similar:
         console.print(f"\n[green]Found {len(similar)} similar case(s) in memory:[/green]")
@@ -338,31 +360,43 @@ def _print_result(result: DiagnosisResult):
 @main.command()
 @click.argument("query")
 @click.option("--top-k", "-k", default=5, help="Number of results")
-def search(query: str, top_k: int):
+@click.option("--namespace", "-N", default=None, help="Memory namespace (default 'default').")
+@click.option(
+    "--fallback-namespaces",
+    default=None,
+    help="Comma-separated namespaces to consult if local ns returns < 3 hits.",
+)
+def search(query: str, top_k: int, namespace: str | None, fallback_namespaces: str | None):
     """Search the bug memory for similar cases."""
-    memory = _get_memory()
-    results = memory.search(query=query, top_k=top_k)
+    memory = _get_memory(namespace=namespace)
+    fallback = _parse_fallback_namespaces(fallback_namespaces)
+    results = memory.search(query=query, top_k=top_k, fallback_namespaces=fallback)
 
     if not results:
         console.print("[yellow]No similar bugs found in memory.[/yellow]")
         return
 
-    table = Table(title=f"Search: {query}")
+    table = Table(title=f"Search: {query} (ns={memory.namespace})")
     table.add_column("Score", style="bold", width=8)
     table.add_column("ID", style="cyan", width=12)
     table.add_column("Title", width=35)
     table.add_column("Root Cause", width=40)
     table.add_column("Tags", style="dim", width=20)
+    if fallback:
+        table.add_column("From NS", style="magenta", width=10)
 
     for r in results:
         tags = ", ".join(r.case.tags[:3])
-        table.add_row(
+        row = [
             f"{r.score:.0%}",
             r.case.id,
             r.case.title[:35],
             r.case.root_cause[:40],
             tags,
-        )
+        ]
+        if fallback:
+            row.append(r.from_namespace or memory.namespace)
+        table.add_row(*row)
 
     console.print(table)
 
@@ -403,13 +437,15 @@ def list_cases(limit: int):
 
 
 @main.command()
-def stats():
+@click.option("--namespace", "-N", default=None, help="Memory namespace (default 'default').")
+def stats(namespace: str | None):
     """Show memory store statistics."""
-    memory = _get_memory()
+    memory = _get_memory(namespace=namespace)
     s = memory.stats()
 
     console.print(
         Panel(
+            f"[bold]Namespace:[/bold] {memory.namespace}\n\n"
             f"[bold]Total Cases:[/bold] {s.total_cases}\n\n"
             f"[bold]By Severity:[/bold] {s.by_severity}\n"
             f"[bold]By Status:[/bold] {s.by_status}\n"

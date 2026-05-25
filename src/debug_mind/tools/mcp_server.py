@@ -32,7 +32,8 @@ from debug_mind.schemas import BugCase, Severity, BugStatus
 
 mcp = FastMCP("debug-mind-memory")
 
-_memory: MemoryStore | None = None
+# Per-namespace cache. Tests may set this to None to force rebuild on next call.
+_memory: dict[str, MemoryStore] | None = None
 _mcp_token: str | None = os.environ.get("DEBUG_MIND_MCP_TOKEN", None)
 
 if _mcp_token:
@@ -61,21 +62,25 @@ def _check_rate_limit() -> str | None:
     return None
 
 
-def _get_memory() -> MemoryStore:
+def _get_memory(namespace: str = "default") -> MemoryStore:
     global _memory
     if _memory is None:
+        _memory = {}
+    if namespace not in _memory:
         # Read env var at call time — NOT module-level DEFAULT_MEMORY_DIR,
         # which is frozen at import time and immune to monkeypatch.setenv.
         memory_dir = os.environ.get("DEBUG_MIND_MEMORY_DIR", "memory")
-        _memory = MemoryStore(memory_dir=memory_dir)
-    return _memory
+        _memory[namespace] = MemoryStore(memory_dir=memory_dir, namespace=namespace)
+    return _memory[namespace]
 
 
-def _audit_log(op: str, case_id: str, actor: str = "mcp", **details) -> None:
+def _audit_log(
+    op: str, case_id: str, actor: str = "mcp", namespace: str = "default", **details
+) -> None:
     from debug_mind.observability.audit import write_audit
 
     write_audit(
-        _get_memory().memory_dir / "audit.jsonl",
+        _get_memory(namespace).memory_dir / "audit.jsonl",
         op=op,
         case_id=case_id,
         actor=actor,
@@ -96,14 +101,23 @@ def _check_auth(token: str | None) -> str | None:
 
 
 @mcp.tool()
-def search_similar_bugs(query: str, top_k: int = 5) -> str:
+def search_similar_bugs(
+    query: str,
+    top_k: int = 5,
+    namespace: str = "default",
+    fallback_namespaces: Optional[list[str]] = None,
+) -> str:
     """Search past bug cases by symptom, error, or keyword description.
 
     Use this first when investigating a new bug to check if a similar
-    issue has been diagnosed before.
+    issue has been diagnosed before. Set `namespace` to scope the search
+    to a team/service silo; `fallback_namespaces` lets you pad results
+    from other silos if the local one is sparse.
     """
-    memory = _get_memory()
-    results = memory.search(query=query, top_k=top_k)
+    memory = _get_memory(namespace)
+    results = memory.search(
+        query=query, top_k=top_k, fallback_namespaces=fallback_namespaces
+    )
 
     if not results:
         return json.dumps(
@@ -112,6 +126,7 @@ def search_similar_bugs(query: str, top_k: int = 5) -> str:
 
     output = {
         "found": len(results),
+        "namespace": memory.namespace,
         "cases": [
             {
                 "id": r.case.id,
@@ -122,6 +137,7 @@ def search_similar_bugs(query: str, top_k: int = 5) -> str:
                 "tags": r.case.tags,
                 "verified": r.case.verified,
                 "hit_count": r.case.hit_count,
+                "from_namespace": r.from_namespace or memory.namespace,
             }
             for r in results
         ],
@@ -130,9 +146,9 @@ def search_similar_bugs(query: str, top_k: int = 5) -> str:
 
 
 @mcp.tool()
-def list_recent_bugs(limit: int = 10) -> str:
+def list_recent_bugs(limit: int = 10, namespace: str = "default") -> str:
     """List the most recently diagnosed bug cases."""
-    memory = _get_memory()
+    memory = _get_memory(namespace)
     cases = memory.list_recent(limit=limit)
     return json.dumps(
         {
@@ -155,9 +171,9 @@ def list_recent_bugs(limit: int = 10) -> str:
 
 
 @mcp.tool()
-def get_bug_stats() -> str:
+def get_bug_stats(namespace: str = "default") -> str:
     """Get statistics about the bug memory store."""
-    memory = _get_memory()
+    memory = _get_memory(namespace)
     stats = memory.stats()
     return json.dumps(
         {
@@ -187,6 +203,7 @@ def save_bug_case(
     diagnosis_steps: Optional[list[str]] = None,
     similar_case_ids: Optional[list[str]] = None,
     auth_token: str = "",
+    namespace: str = "default",
 ) -> str:
     """Save a diagnosed bug case to the experiential memory.
 
@@ -200,7 +217,7 @@ def save_bug_case(
     if err:
         return err
 
-    memory = _get_memory()
+    memory = _get_memory(namespace)
 
     from debug_mind.sanitize import sanitize_bug_input
 
@@ -226,12 +243,14 @@ def save_bug_case(
     )
 
     memory.save(case)
-    _audit_log("save", case.id, title=title)
-    return json.dumps({"saved": True, "case_id": case.id}, ensure_ascii=False)
+    _audit_log("save", case.id, namespace=namespace, title=title)
+    return json.dumps(
+        {"saved": True, "case_id": case.id, "namespace": namespace}, ensure_ascii=False
+    )
 
 
 @mcp.tool()
-def delete_bug_case(case_id: str, auth_token: str = "") -> str:
+def delete_bug_case(case_id: str, auth_token: str = "", namespace: str = "default") -> str:
     """Delete a bug case from memory by its ID."""
     err = _check_auth(auth_token)
     if err:
@@ -240,16 +259,22 @@ def delete_bug_case(case_id: str, auth_token: str = "") -> str:
     if err:
         return err
 
-    memory = _get_memory()
+    memory = _get_memory(namespace)
     deleted = memory.delete(case_id)
     if not deleted:
         return json.dumps({"error": f"Case {case_id} not found"}, ensure_ascii=False)
-    _audit_log("delete", case_id)
+    _audit_log("delete", case_id, namespace=namespace)
     return json.dumps({"deleted": True, "case_id": case_id}, ensure_ascii=False)
 
 
 @mcp.tool()
-def verify_bug_case(case_id: str, correct: bool, notes: str = "", auth_token: str = "") -> str:
+def verify_bug_case(
+    case_id: str,
+    correct: bool,
+    notes: str = "",
+    auth_token: str = "",
+    namespace: str = "default",
+) -> str:
     """Verify a bug case as correct or mark it as wrong.
 
     correct=True marks the case as verified; correct=False removes it from
@@ -262,11 +287,11 @@ def verify_bug_case(case_id: str, correct: bool, notes: str = "", auth_token: st
     if err:
         return err
 
-    memory = _get_memory()
+    memory = _get_memory(namespace)
     ok = memory.verify(case_id, correct=correct, notes=notes)
     if not ok:
         return json.dumps({"error": f"Case {case_id} not found"}, ensure_ascii=False)
-    _audit_log("verify", case_id, correct=correct)
+    _audit_log("verify", case_id, namespace=namespace, correct=correct)
     if correct:
         return json.dumps({"verified": True, "case_id": case_id}, ensure_ascii=False)
     return json.dumps({"rejected": True, "case_id": case_id}, ensure_ascii=False)

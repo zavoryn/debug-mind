@@ -28,6 +28,7 @@ _log = get_logger("memory")
 DEFAULT_MEMORY_DIR = Path(os.environ.get("DEBUG_MIND_MEMORY_DIR", "memory"))
 DEDUP_THRESHOLD = float(os.environ.get("DEBUG_MIND_DEDUP_THRESHOLD", "0.92"))
 HIT_COUNT_WEIGHT = float(os.environ.get("DEBUG_MIND_HIT_COUNT_WEIGHT", "0.05"))
+DEFAULT_NAMESPACE = os.environ.get("DEBUG_MIND_NAMESPACE", "default")
 
 
 def _as_float_list(vector) -> list[float]:
@@ -60,8 +61,24 @@ class MemoryStore:
         memory_dir: Path | str | None = None,
         embedding_fn=None,
         reranker=None,
+        namespace: str = DEFAULT_NAMESPACE,
     ):
-        self.memory_dir = Path(memory_dir) if memory_dir else DEFAULT_MEMORY_DIR
+        # Base directory: the user-facing "memory/" root.
+        # Effective directory: {base}/{namespace}/ where cases/sqlite/chroma live.
+        self.base_dir = Path(memory_dir) if memory_dir else DEFAULT_MEMORY_DIR
+        if not namespace or "/" in namespace or "\\" in namespace or namespace.startswith("."):
+            raise ValueError(
+                f"Invalid namespace: {namespace!r}. Must be a non-empty single path "
+                "segment without separators or leading dot."
+            )
+        self.namespace = namespace
+        self.memory_dir = self.base_dir / namespace
+
+        # Auto-migrate pre-Phase-6 layout (memory/cases/ → memory/default/cases/)
+        # but only when the caller is asking for the "default" namespace.
+        if namespace == "default":
+            self._migrate_legacy_layout(self.base_dir)
+
         self.cases_dir = self.memory_dir / "cases"
         self.cases_dir.mkdir(parents=True, exist_ok=True)
         self.reranker = reranker
@@ -74,6 +91,76 @@ class MemoryStore:
         self.backend.initialize()
 
         self._cleanup_stale_tmps()
+
+    # ── Migration ─────────────────────────────────────────────────
+
+    @staticmethod
+    def _migrate_legacy_layout(base_dir: Path) -> bool:
+        """Move pre-Phase-6 files from base_dir/ into base_dir/default/.
+
+        Only runs when:
+          - base_dir/cases/ exists (legacy marker)
+          - base_dir/default/ does NOT exist (not yet migrated)
+
+        Moves are per-entry via os.rename; on same filesystem each rename is
+        atomic. Backend artifacts (sqlite/, chroma/) are moved too so the
+        vector index is preserved without a rebuild. If a backend move fails
+        the markdown move still succeeds and the backend will rebuild lazily.
+
+        Returns True if anything was migrated, False otherwise.
+        """
+        legacy_cases = base_dir / "cases"
+        new_default = base_dir / "default"
+        if not legacy_cases.exists() or not legacy_cases.is_dir():
+            return False
+        if new_default.exists():
+            return False
+
+        _log.warning(
+            "memory: migrating legacy layout → default namespace",
+            extra={"base_dir": str(base_dir)},
+        )
+        try:
+            new_default.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            _log.error(
+                "memory: migration failed to create default/ dir",
+                extra={"err": str(e)},
+            )
+            return False
+
+        moved_anything = False
+        try:
+            os.rename(str(legacy_cases), str(new_default / "cases"))
+            moved_anything = True
+        except OSError as e:
+            _log.error("memory: migration cases move failed", extra={"err": str(e)})
+            return False
+
+        for sub in ("sqlite", "chroma"):
+            src = base_dir / sub
+            if src.exists() and src.is_dir():
+                try:
+                    os.rename(str(src), str(new_default / sub))
+                except OSError as e:
+                    _log.warning(
+                        "memory: migration backend move failed (will rebuild lazily)",
+                        extra={"sub": sub, "err": str(e)},
+                    )
+
+        for fname in ("audit.jsonl",):
+            src = base_dir / fname
+            if src.exists() and src.is_file():
+                try:
+                    os.rename(str(src), str(new_default / fname))
+                except OSError:
+                    pass
+
+        _log.info(
+            "memory: legacy layout migrated to default namespace",
+            extra={"base_dir": str(base_dir)},
+        )
+        return moved_anything
 
     def _create_backend(self):
         # Default is SQLite — pure stdlib, no C extensions, works on every platform.
@@ -262,13 +349,62 @@ class MemoryStore:
         top_k: int = 5,
         min_score: float = 0.1,
         include_unverified: bool = True,
+        fallback_namespaces: list[str] | None = None,
     ) -> list[SearchResult]:
         """Search for similar bug cases by semantic similarity.
 
         Results are reranked: verified cases get a boost (effective_score = score * 1.0
         for verified, score * 0.7 for unverified), but the returned score field
         contains the original cosine similarity for evaluation transparency.
+
+        If `fallback_namespaces` is given and the local namespace returns fewer
+        than 3 results, additional namespaces are searched to pad up to top_k.
+        Results from a fallback have `from_namespace` populated.
         """
+        results = self._search_local(query, top_k, min_score, include_unverified)
+
+        if fallback_namespaces and len(results) < 3:
+            for ns in fallback_namespaces:
+                if not ns or ns == self.namespace:
+                    continue
+                if len(results) >= top_k:
+                    break
+                try:
+                    fb = MemoryStore(
+                        memory_dir=self.base_dir,
+                        embedding_fn=self._embedding_fn,
+                        reranker=self.reranker,
+                        namespace=ns,
+                    )
+                except (FileNotFoundError, OSError, ValueError) as e:
+                    _log.warning(
+                        "memory: fallback ns init failed",
+                        extra={"ns": ns, "err": str(e)},
+                    )
+                    continue
+                try:
+                    fb_results = fb._search_local(
+                        query, top_k - len(results), min_score, include_unverified
+                    )
+                    seen_ids = {r.case.id for r in results}
+                    for r in fb_results:
+                        if r.case.id in seen_ids:
+                            continue
+                        r.from_namespace = ns
+                        results.append(r)
+                finally:
+                    fb.close()
+
+        return results[:top_k]
+
+    def _search_local(
+        self,
+        query: str,
+        top_k: int,
+        min_score: float,
+        include_unverified: bool,
+    ) -> list[SearchResult]:
+        """The namespace-local search — does NOT touch fallback namespaces."""
         count = self.backend.count()
         if count == 0:
             return []
