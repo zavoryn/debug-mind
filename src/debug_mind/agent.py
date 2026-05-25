@@ -18,12 +18,16 @@ import time
 import uuid
 from typing import Any, Generator
 
-from debug_mind.schemas import BugCase, DiagnosisResult, Severity, BugStatus
+from debug_mind.schemas import BugCase, DiagnosisResult, BugStatus
 from debug_mind.memory.store import MemoryStore
-from debug_mind.skills.codebase import search_code, read_file, list_project_structure
 from debug_mind.tools.schemas import (
     MEMORY_TOOLS as _MEMORY_TOOLS,
     CODEBASE_TOOLS as _CODEBASE_TOOLS,
+)
+from debug_mind.skills.registry import (
+    Skill,
+    SkillRegistry,
+    get_default_registry,
 )
 from debug_mind.budget import TokenBudget
 from debug_mind.observability.logger import get_logger, _try_otel_span
@@ -77,6 +81,8 @@ class DiagnosticAgent:
         provider: LLMProvider | None = None,
         budget: TokenBudget | None = None,
         no_retry: bool = False,
+        skills: list[str] | None = None,
+        skill_registry: SkillRegistry | None = None,
     ):
         self.memory = memory
         self.project_path = project_path
@@ -85,7 +91,41 @@ class DiagnosticAgent:
         # Provider: explicit > env choice > default Anthropic
         self.provider = provider or self._create_provider(api_key)
         self.model = model or self.provider.default_model
-        self.tools = MEMORY_TOOLS + (CODEBASE_TOOLS if project_path else [])
+
+        # Skill loading — default behaviour mirrors pre-Phase-6:
+        #   no skills arg → memory + (codebase iff project_path)
+        # Explicit list bypasses the auto-codebase rule.
+        self._skill_registry = skill_registry or get_default_registry()
+        if skills is None:
+            skill_names = ["memory"]
+            if project_path:
+                skill_names.append("codebase")
+        else:
+            skill_names = list(skills)
+        self._skills: list[Skill] = self._skill_registry.load_by_names(skill_names)
+        self._skill_names = skill_names
+
+        context = {"memory": memory, "project_path": project_path}
+        self.tools = []
+        self._tool_skill_map: dict[str, Skill] = {}
+        for skill in self._skills:
+            for tool in skill.get_tools(context):
+                if tool["name"] in self._tool_skill_map:
+                    raise ValueError(
+                        f"Tool name conflict: {tool['name']!r} provided by both "
+                        f"{self._tool_skill_map[tool['name']].name!r} and {skill.name!r}"
+                    )
+                self.tools.append(tool)
+                self._tool_skill_map[tool["name"]] = skill
+
+        _log.info(
+            "agent initialised",
+            extra={
+                "skills": skill_names,
+                "tool_count": len(self.tools),
+                "project": bool(project_path),
+            },
+        )
 
     def _create_provider(self, api_key: str | None) -> LLMProvider:
         """Create provider based on DEBUG_MIND_PROVIDER env or default to Anthropic."""
@@ -410,77 +450,9 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
         )
 
     def _execute_tool(self, name: str, params: dict) -> tuple[dict, str | None]:
-        """Execute a single tool call. Returns (result, side_effect_tag)."""
-        if name == "search_memory":
-            results = self.memory.search(query=params["query"], top_k=params.get("top_k", 5))
-            return {
-                "found": len(results),
-                "cases": [
-                    {
-                        "id": r.case.id,
-                        "title": r.case.title,
-                        "score": r.score,
-                        "root_cause": r.case.root_cause,
-                        "fix_suggestion": r.case.fix_suggestion,
-                        "tags": r.case.tags,
-                        "verified": r.case.verified,
-                        "hit_count": r.case.hit_count,
-                    }
-                    for r in results
-                ],
-            }, "search"
-
-        elif name == "save_to_memory":
-            from debug_mind.sanitize import sanitize_tags
-
-            case = BugCase(
-                title=params["title"],
-                symptoms=params["symptoms"],
-                error_log=params.get("error_log", ""),
-                root_cause=params["root_cause"],
-                fix_suggestion=params["fix_suggestion"],
-                severity=Severity(params.get("severity", "medium")),
-                status=BugStatus.ROOT_CAUSE_FOUND,
-                tags=sanitize_tags(params.get("tags", [])),
-                environment=params.get("environment", {}),
-                diagnosis_steps=params.get("diagnosis_steps", []),
-                similar_case_ids=params.get("similar_case_ids", []),
-            )
-            self.memory.save(case)
-            return {"saved": True, "case_id": case.id}, "save"
-
-        elif name == "search_code" and self.project_path:
-            return search_code(
-                pattern=params["pattern"],
-                project_path=self.project_path,
-                file_type=params.get("file_type", ""),
-            ), None
-
-        elif name == "read_file" and self.project_path:
-            return read_file(
-                file_path=params["file_path"],
-                project_path=self.project_path,
-                start_line=params.get("start_line", 0),
-                end_line=params.get("end_line", 100),
-            ), None
-
-        elif name == "parse_symbols" and self.project_path:
-            from debug_mind.skills.parser import parse_symbols
-
-            return parse_symbols(
-                project_path=self.project_path,
-                file_path=params["file_path"],
-            ), "code"
-
-        elif name == "list_project_structure" and self.project_path:
-            return list_project_structure(
-                project_path=self.project_path,
-                depth=params.get("depth", 3),
-            ), None
-
-        elif name in ("search_code", "read_file", "list_project_structure"):
-            return {
-                "error": "No project path configured. Use --project to connect a codebase."
-            }, None
-
-        return {"error": f"Unknown tool: {name}"}, None
+        """Execute a single tool call by dispatching to the owning skill."""
+        skill = self._tool_skill_map.get(name)
+        if skill is None:
+            return {"error": f"Unknown tool: {name}"}, None
+        context = {"memory": self.memory, "project_path": self.project_path}
+        return skill.execute(name, params, context)

@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "description": "Common JVM error / stack-trace patterns for the jvm skill demo.",
+  "patterns": [
+    {
+      "id": "npe-basic",
+      "name": "NullPointerException",
+      "keywords": ["NullPointerException", "NPE", "null pointer"],
+      "common_cause": "Dereferencing a null reference — often from an unchecked Optional.get(), a missing autowire, or a deserialization that produced null fields.",
+      "typical_fix": "Add a null check or Optional.orElseThrow() at the call site; for Spring beans verify @Autowired / @Component scanning is set up.",
+      "severity_hint": "high"
+    },
+    {
+      "id": "oom-heap",
+      "name": "OutOfMemoryError: Java heap space",
+      "keywords": ["OutOfMemoryError", "Java heap space", "OOM"],
+      "common_cause": "Unbounded collection growth (caches without eviction, accumulating List<?> in batch jobs) or oversized request payloads bypassing pagination.",
+      "typical_fix": "Add bounded LRU cache (Caffeine), enforce pagination, raise -Xmx only as a stop-gap. Take heap dump with -XX:+HeapDumpOnOutOfMemoryError and analyse with Eclipse MAT.",
+      "severity_hint": "critical"
+    },
+    {
+      "id": "oom-metaspace",
+      "name": "OutOfMemoryError: Metaspace",
+      "keywords": ["OutOfMemoryError", "Metaspace"],
+      "common_cause": "Classloader leak — typical in app servers that hot-redeploy WAR/EAR, or in apps that dynamically generate proxies (CGLIB, Groovy, JSP recompile).",
+      "typical_fix": "Raise -XX:MaxMetaspaceSize as a temporary measure; root-cause: take heap dump, look for duplicate classloaders. Restart cadence as a stop-gap.",
+      "severity_hint": "high"
+    },
+    {
+      "id": "stack-overflow",
+      "name": "StackOverflowError",
+      "keywords": ["StackOverflowError"],
+      "common_cause": "Unbounded recursion — frequently an accidental cycle in equals/hashCode/toString between bidirectional JPA associations, or a misconfigured Jackson serializer.",
+      "typical_fix": "Add @JsonIgnore on the back-reference, or use @JsonManagedReference / @JsonBackReference. For business recursion, switch to iteration with an explicit stack.",
+      "severity_hint": "high"
+    },
+    {
+      "id": "deadlock",
+      "name": "Thread deadlock (jstack)",
+      "keywords": ["Found one Java-level deadlock", "Found deadlock", "waiting to lock"],
+      "common_cause": "Two threads acquire two locks in opposite order — common when JDBC connection pool lock and an application-level lock are nested.",
+      "typical_fix": "Enforce a global lock-acquisition order, or use tryLock with timeout. Take periodic jstack snapshots to confirm the cycle.",
+      "severity_hint": "critical"
+    },
+    {
+      "id": "concurrent-modification",
+      "name": "ConcurrentModificationException",
+      "keywords": ["ConcurrentModificationException"],
+      "common_cause": "Mutating a collection while iterating it from the same thread (fail-fast iterator), or sharing a non-thread-safe collection across threads.",
+      "typical_fix": "Use Iterator.remove(), CopyOnWriteArrayList, or take a defensive copy before iterating. For multi-threaded use, switch to ConcurrentHashMap.",
+      "severity_hint": "medium"
+    },
+    {
+      "id": "class-not-found",
+      "name": "ClassNotFoundException / NoClassDefFoundError",
+      "keywords": ["ClassNotFoundException", "NoClassDefFoundError"],
+      "common_cause": "Missing dependency at runtime that was present at compile time (excluded by transitive dep resolution), or duplicate JARs with conflicting versions.",
+      "typical_fix": "Run mvn dependency:tree / gradle dependencies, ensure the required JAR is in the runtime classpath. For shadow/uber-jars, check the merged manifest.",
+      "severity_hint": "high"
+    },
+    {
+      "id": "class-cast",
+      "name": "ClassCastException",
+      "keywords": ["ClassCastException"],
+      "common_cause": "Unsafe downcast of a generic type at runtime (type erasure hides the mismatch at compile time), or returning a proxy where the caller expects the concrete class.",
+      "typical_fix": "Use instanceof + pattern variables (Java 16+), avoid raw types. For Spring AOP proxies, use interface types or enable CGLIB proxying.",
+      "severity_hint": "medium"
+    },
+    {
+      "id": "thread-blocked",
+      "name": "Thread BLOCKED on monitor",
+      "keywords": ["BLOCKED", "monitor", "waiting to lock"],
+      "common_cause": "Many threads waiting on the same monitor — typical hotspot is a synchronized block guarding a slow I/O call (DB query, HTTP request).",
+      "typical_fix": "Move I/O outside the synchronized region; consider ReadWriteLock or per-key striped locks. Profile with async-profiler to identify the contended monitor.",
+      "severity_hint": "high"
+    },
+    {
+      "id": "gc-overhead",
+      "name": "OutOfMemoryError: GC overhead limit exceeded",
+      "keywords": ["GC overhead limit exceeded"],
+      "common_cause": "JVM spending > 98% of time in GC but reclaiming < 2% heap — usually slow heap leak under steady traffic.",
+      "typical_fix": "Same as Java heap OOM — identify retention path via heap dump. As a workaround, disable the check with -XX:-UseGCOverheadLimit, but it just delays the crash.",
+      "severity_hint": "critical"
+    }
+  ]
+}

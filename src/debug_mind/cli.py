@@ -112,6 +112,14 @@ def _warn_invalid_env() -> None:
 @click.option("--max-cost", default=None, type=float, help="Max cost in USD (default 0.50)")
 @click.option("--max-tokens", default=None, type=int, help="Max cumulative tokens (default 50000)")
 @click.option("--no-retry", is_flag=True, help="Disable API retry on transient errors")
+@click.option(
+    "--skills",
+    default=None,
+    help=(
+        "Comma-separated skill names to load (e.g. memory,jvm). "
+        "Default: memory + codebase (if --project). Run 'debug-mind skills' to list."
+    ),
+)
 def diagnose(
     description: str,
     log: str,
@@ -122,6 +130,7 @@ def diagnose(
     max_cost: float | None,
     max_tokens: int | None,
     no_retry: bool,
+    skills: str | None,
 ):
     """Diagnose a bug using AI + memory + optional codebase search."""
     # Parse environment
@@ -198,9 +207,22 @@ def diagnose(
         max_cost_usd=cost_limit,
     )
 
-    agent = DiagnosticAgent(
-        memory=memory, project_path=project_path, api_key=api_key, budget=budget, no_retry=no_retry
-    )
+    skill_names: list[str] | None = None
+    if skills:
+        skill_names = [s.strip() for s in skills.split(",") if s.strip()]
+
+    try:
+        agent = DiagnosticAgent(
+            memory=memory,
+            project_path=project_path,
+            api_key=api_key,
+            budget=budget,
+            no_retry=no_retry,
+            skills=skill_names,
+        )
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
 
     if no_stream:
         try:
@@ -544,6 +566,27 @@ def web(port: int, share: bool):
     from debug_mind.web import launch_ui
 
     launch_ui(port=port, share=share)
+
+
+@main.command()
+def skills():
+    """List built-in skill packs available to --skills."""
+    from debug_mind.skills.registry import get_default_registry
+
+    registry = get_default_registry()
+    all_skills = registry.list_all()
+
+    table = Table(title=f"Built-in skills ({len(all_skills)})")
+    table.add_column("Name", style="cyan", width=12)
+    table.add_column("Description", width=70)
+
+    for s in all_skills:
+        table.add_row(s.name, s.description)
+
+    console.print(table)
+    console.print(
+        "[dim]Use --skills name1,name2 on `diagnose` to compose a custom skill set.[/dim]"
+    )
 
 
 @main.command()
