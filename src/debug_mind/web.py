@@ -569,4 +569,24 @@ def launch_ui(port: int = 7860, share: bool = False, memory_dir: str | None = No
             stats_btn.click(fn=do_stats, outputs=stats_out)
             app.load(fn=do_stats, outputs=stats_out)
 
+        # ── Tab 5: Case Graph (P6-5) ──────────────────────────────────
+        with gr.Tab("🕸 案例图谱"):
+            gr.Markdown(
+                "可视化案例之间的关系（variant / caused_by / fixed_by / related）。"
+                "节点颜色：绿色 = 已验证，灰色 = 未验证。"
+            )
+            graph_max_nodes = gr.Slider(
+                10, 200, value=50, step=10, label="最多节点数"
+            )
+            graph_btn = gr.Button("🔄 刷新图谱", variant="primary")
+            graph_out = gr.HTML()
+
+            def _render_graph(max_nodes: int) -> str:
+                from debug_mind.web_graph import build_case_graph
+
+                return build_case_graph(memory, max_nodes=int(max_nodes))
+
+            graph_btn.click(fn=_render_graph, inputs=[graph_max_nodes], outputs=graph_out)
+            app.load(fn=_render_graph, inputs=[graph_max_nodes], outputs=graph_out)
+
     app.launch(server_port=port, share=share)

@@ -8,4 +8,5 @@ tenacity>=8.2
 pyyaml>=6.0
 mcp>=1.0.0
 gradio>=4.0
+pyvis>=0.3
 chromadb>=0.6.0,<0.7
