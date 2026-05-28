@@ -118,6 +118,8 @@ class DiagnosticAgent:
                 self.tools.append(tool)
                 self._tool_skill_map[tool["name"]] = skill
 
+        self._retry_decorator = self._create_retry_decorator()
+
         _log.info(
             "agent initialised",
             extra={
@@ -152,9 +154,7 @@ class DiagnosticAgent:
 
     def _call_provider(self, **kwargs):
         """Call the LLM provider with retry on transient errors."""
-        retry_decorator = self._create_retry_decorator()
-
-        @retry_decorator
+        @self._retry_decorator
         def _do_call():
             return self.provider.create_message(**kwargs)
 
