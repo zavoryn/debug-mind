@@ -11,9 +11,15 @@ import json
 import os
 from dataclasses import dataclass, field
 
-# Default pricing: USD per 1M tokens (claude-sonnet-4-20250514)
+# Default pricing: USD per 1M tokens
 _DEFAULT_PRICING = {
     "claude-sonnet-4-20250514": {
+        "input": 3.0,
+        "output": 15.0,
+        "cache_read": 0.30,
+        "cache_write": 3.75,
+    },
+    "claude-sonnet-4-6": {
         "input": 3.0,
         "output": 15.0,
         "cache_read": 0.30,
@@ -49,12 +55,13 @@ class TokenBudget:
     max_input_tokens: int | None = 200_000
     max_output_tokens: int | None = 20_000
     max_cost_usd: float | None = 0.50
-    model: str = "claude-sonnet-4-20250514"
+    model: str = "claude-sonnet-4-6"
 
     _total_input: int = field(default=0, repr=False)
     _total_output: int = field(default=0, repr=False)
     _total_cache_read: int = field(default=0, repr=False)
     _total_cache_write: int = field(default=0, repr=False)
+    _pricing: dict = field(default_factory=_load_pricing, repr=False, init=False)
 
     def record(self, usage) -> None:
         """Record token usage from an Anthropic response.usage object.
@@ -81,8 +88,7 @@ class TokenBudget:
 
     def accumulated_cost(self) -> float:
         """Return total accumulated cost in USD."""
-        pricing = _load_pricing()
-        rates = pricing.get(self.model, pricing.get("claude-sonnet-4-20250514", {}))
+        rates = self._pricing.get(self.model, self._pricing.get("claude-sonnet-4-6", {}))
         cost = 0.0
         cost += self._total_input * rates.get("input", 3.0) / 1_000_000
         cost += self._total_output * rates.get("output", 15.0) / 1_000_000
