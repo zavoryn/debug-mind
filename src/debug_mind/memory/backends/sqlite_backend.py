@@ -58,14 +58,32 @@ class SQLiteBackend:
         rows = conn.execute("SELECT id, embedding, metadata FROM cases").fetchall()
         if not rows:
             return []
-        scored = []
-        for row in rows:
-            emb = json.loads(row[1])
-            score = self._cosine_similarity(query_embedding, emb)
-            meta = json.loads(row[2]) if row[2] else {}
-            scored.append({"id": row[0], "score": score, "metadata": meta})
-        scored.sort(key=lambda x: x["score"], reverse=True)
-        return scored[:top_k]
+
+        try:
+            import numpy as np
+
+            ids = [row[0] for row in rows]
+            matrix = np.array([json.loads(row[1]) for row in rows], dtype=np.float32)
+            q = np.array(query_embedding, dtype=np.float32)
+            dots = matrix @ q
+            denom = np.linalg.norm(matrix, axis=1) * float(np.linalg.norm(q))
+            denom = np.where(denom == 0, 1e-10, denom)
+            scores = dots / denom
+            top_indices = np.argsort(scores)[::-1][:top_k]
+            result = []
+            for idx in top_indices:
+                meta = json.loads(rows[idx][2]) if rows[idx][2] else {}
+                result.append({"id": ids[idx], "score": float(scores[idx]), "metadata": meta})
+            return result
+        except ImportError:
+            scored = []
+            for row in rows:
+                emb = json.loads(row[1])
+                score = self._cosine_similarity(query_embedding, emb)
+                meta = json.loads(row[2]) if row[2] else {}
+                scored.append({"id": row[0], "score": score, "metadata": meta})
+            scored.sort(key=lambda x: x["score"], reverse=True)
+            return scored[:top_k]
 
     def upsert(
         self, ids: list[str], embeddings: list[list[float]], metadatas: list[dict[str, Any]]
