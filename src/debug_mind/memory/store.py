@@ -25,6 +25,29 @@ from debug_mind.observability.logger import get_logger
 
 _log = get_logger("memory")
 
+# Pre-compiled patterns for _markdown_to_case — compiled once at import time
+_RE_CASE_ID = re.compile(r"case_id:\s*`(\w+)`")
+_RE_SEVERITY = re.compile(r"severity:\s*\*\*(\w+)\*\*")
+_RE_STATUS = re.compile(r"status:\s*\*\*(\w+)\*\*")
+_RE_TITLE = re.compile(r"^# (.+)$", re.MULTILINE)
+_RE_CREATED = re.compile(r"created:\s*(\S+)")
+_RE_UPDATED = re.compile(r"updated:\s*(\S+)")
+_RE_SIMILAR_CASES = re.compile(r"similar_cases:\s*(\[.*?\])")
+_RE_VERIFIED = re.compile(r"^- verified:\s*(true|false)", re.MULTILINE | re.IGNORECASE)
+_RE_VERIFICATION_NOTES = re.compile(r"^- verification_notes:\s*(.+)", re.MULTILINE)
+_RE_HIT_COUNT = re.compile(r"^- hit_count:\s*(\d+)", re.MULTILINE)
+_RE_LAST_USED_AT = re.compile(r"^- last_used_at:\s*(\S+)", re.MULTILINE)
+_RE_SUPERSEDED_BY = re.compile(r"^- superseded_by:\s*(\S+)", re.MULTILINE)
+_RE_LAST_VERIFIED_AT = re.compile(r"^- last_verified_at:\s*(\S+)", re.MULTILINE)
+_RE_VERIFY_COUNT = re.compile(r"^- verify_count:\s*(\d+)", re.MULTILINE)
+_RE_VERSION = re.compile(r"^- version:\s*(\d+)", re.MULTILINE)
+_RE_LINKS = re.compile(r"^- links:\s*(\[.*\])", re.MULTILINE)
+_RE_SECTIONS: dict[str, re.Pattern] = {
+    hdr: re.compile(rf"## {re.escape(hdr)}\s*\n(.*?)(?=\n## |\n---)", re.DOTALL)
+    for hdr in ("Symptoms", "Root Cause", "Fix Suggestion", "Error Log", "Environment",
+                "Diagnosis Steps", "Tags")
+}
+
 DEFAULT_MEMORY_DIR = Path(os.environ.get("DEBUG_MIND_MEMORY_DIR", "memory"))
 DEDUP_THRESHOLD = float(os.environ.get("DEBUG_MIND_DEDUP_THRESHOLD", "0.92"))
 HIT_COUNT_WEIGHT = float(os.environ.get("DEBUG_MIND_HIT_COUNT_WEIGHT", "0.05"))
@@ -236,14 +259,14 @@ class MemoryStore:
                 case.updated_at = datetime.now(timezone.utc)
                 case.version = (case.version or 1) + 1
 
-                existing = self._find_dedup_target(case)
+                existing, precomputed_emb = self._find_dedup_target(case)
                 if existing:
                     return existing
 
                 self._save_to_markdown(case)
 
                 try:
-                    self._save_to_vector(case)
+                    self._save_to_vector(case, embedding=precomputed_emb)
                 except Exception as e:
                     _log.warning(f"Vector upsert failed for {case.id}: {e}")
         except FileLockTimeout:
@@ -251,22 +274,27 @@ class MemoryStore:
         _log.info("case saved", extra={"op": "save", "case_id": case.id})
         return case
 
-    def _find_dedup_target(self, case: BugCase) -> BugCase | None:
+    def _find_dedup_target(
+        self, case: BugCase
+    ) -> tuple[BugCase | None, list[float] | None]:
         """Check if a verified case with high similarity already exists.
+
+        Returns (existing_case, embedding) so the caller can reuse the embedding
+        for the subsequent _save_to_vector call, avoiding a redundant embed.
 
         Only merges against verified cases — unverified cases are kept separate
         to preserve diversity (wrong diagnoses may look similar to correct ones).
         """
         count = self.backend.count()
         if count == 0:
-            return None
+            return None, None
 
         query_text = case.to_search_text()
         embedding = self._embed([query_text])[0]
         results = self.backend.search(embedding, min(3, count))
 
         if not results:
-            return None
+            return None, embedding
 
         for entry in results:
             case_id = entry["id"]
@@ -292,13 +320,13 @@ class MemoryStore:
                 self._save_to_vector(existing)
             except Exception:
                 pass
-            return existing
+            return existing, embedding
 
-        return None
+        return None, embedding
 
-    def _save_to_vector(self, case: BugCase) -> None:
-        search_text = case.to_search_text()
-        embedding = self._embed([search_text])[0]
+    def _save_to_vector(self, case: BugCase, embedding: list[float] | None = None) -> None:
+        if embedding is None:
+            embedding = self._embed([case.to_search_text()])[0]
         metadata = {
             "severity": case.severity.value,
             "status": case.status.value,
@@ -809,6 +837,9 @@ def _case_to_markdown(case: BugCase) -> str:
 """
 
 
+_RE_STEP_PREFIX = re.compile(r"^\d+\.\s*")
+
+
 def _markdown_to_case(path: Path) -> BugCase | None:
     """Parse a Markdown file back into a BugCase. Tolerant of missing fields."""
     try:
@@ -818,32 +849,28 @@ def _markdown_to_case(path: Path) -> BugCase | None:
 
     case = BugCase(title="parsed", symptoms="")
 
-    # Extract case_id from backtick
-    if m := re.search(r"case_id:\s*`(\w+)`", text):
+    if m := _RE_CASE_ID.search(text):
         case.id = m.group(1)
     else:
         case.id = path.stem
 
-    # Extract severity and status
-    if m := re.search(r"severity:\s*\*\*(\w+)\*\*", text):
+    if m := _RE_SEVERITY.search(text):
         try:
             case.severity = Severity(m.group(1))
         except ValueError:
             pass
-    if m := re.search(r"status:\s*\*\*(\w+)\*\*", text):
+    if m := _RE_STATUS.search(text):
         try:
             case.status = BugStatus(m.group(1))
         except ValueError:
             pass
 
-    # Title from H1
-    if m := re.search(r"^# (.+)$", text, re.MULTILINE):
+    if m := _RE_TITLE.search(text):
         case.title = m.group(1).strip()
 
-    # Sections — extract between ## headings (stop at next ## or --- separator)
     def section(header: str) -> str:
-        pattern = rf"## {header}\s*\n(.*?)(?=\n## |\n---)"
-        if m := re.search(pattern, text, re.DOTALL):
+        pat = _RE_SECTIONS.get(header)
+        if pat and (m := pat.search(text)):
             return m.group(1).strip()
         return ""
 
@@ -865,7 +892,7 @@ def _markdown_to_case(path: Path) -> BugCase | None:
 
     steps_section = section("Diagnosis Steps")
     case.diagnosis_steps = [
-        re.sub(r"^\d+\.\s*", "", line.strip())
+        _RE_STEP_PREFIX.sub("", line.strip())
         for line in steps_section.split("\n")
         if line.strip() and line.strip() != "- (pending)"
     ]
@@ -874,57 +901,52 @@ def _markdown_to_case(path: Path) -> BugCase | None:
     if tags_section and tags_section != "none":
         case.tags = [t.strip() for t in tags_section.split(",")]
 
-    # Timestamps
-    if m := re.search(r"created:\s*(\S+)", text):
+    if m := _RE_CREATED.search(text):
         try:
             case.created_at = datetime.fromisoformat(m.group(1))
         except ValueError:
             pass
-    if m := re.search(r"updated:\s*(\S+)", text):
+    if m := _RE_UPDATED.search(text):
         try:
             case.updated_at = datetime.fromisoformat(m.group(1))
         except ValueError:
             pass
 
-    # Similar cases
-    if m := re.search(r"similar_cases:\s*(\[.*?\])", text):
+    if m := _RE_SIMILAR_CASES.search(text):
         try:
             case.similar_case_ids = json.loads(m.group(1))
         except json.JSONDecodeError:
             pass
 
-    # Feedback fields (tolerant of missing — old files have defaults)
-    # These use "- key: value" format in the metadata section
-    if m := re.search(r"^- verified:\s*(true|false)", text, re.MULTILINE | re.IGNORECASE):
+    if m := _RE_VERIFIED.search(text):
         case.verified = m.group(1).lower() == "true"
-    if m := re.search(r"^- verification_notes:\s*(.+)", text, re.MULTILINE):
-        notes = m.group(1).strip()
-        case.verification_notes = notes
-    if m := re.search(r"^- hit_count:\s*(\d+)", text, re.MULTILINE):
+    if m := _RE_VERIFICATION_NOTES.search(text):
+        case.verification_notes = m.group(1).strip()
+    if m := _RE_HIT_COUNT.search(text):
         case.hit_count = int(m.group(1))
-    if m := re.search(r"^- last_used_at:\s*(\S+)", text, re.MULTILINE):
+    if m := _RE_LAST_USED_AT.search(text):
         val = m.group(1).strip()
         if val:
             try:
                 case.last_used_at = datetime.fromisoformat(val)
             except ValueError:
                 pass
-    if m := re.search(r"^- superseded_by:\s*(\S+)", text, re.MULTILINE):
+    if m := _RE_SUPERSEDED_BY.search(text):
         val = m.group(1).strip()
         if val:
             case.superseded_by = val
-    if m := re.search(r"^- last_verified_at:\s*(\S+)", text, re.MULTILINE):
+    if m := _RE_LAST_VERIFIED_AT.search(text):
         val = m.group(1).strip()
         if val:
             try:
                 case.last_verified_at = datetime.fromisoformat(val)
             except ValueError:
                 pass
-    if m := re.search(r"^- verify_count:\s*(\d+)", text, re.MULTILINE):
+    if m := _RE_VERIFY_COUNT.search(text):
         case.verify_count = int(m.group(1))
-    if m := re.search(r"^- version:\s*(\d+)", text, re.MULTILINE):
+    if m := _RE_VERSION.search(text):
         case.version = int(m.group(1))
-    if m := re.search(r"^- links:\s*(\[.*\])", text, re.MULTILINE):
+    if m := _RE_LINKS.search(text):
         try:
             parsed_links = json.loads(m.group(1))
             if isinstance(parsed_links, list):
