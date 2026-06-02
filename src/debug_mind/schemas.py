@@ -87,6 +87,14 @@ class BugCase(BaseModel):
         default_factory=list,
         description='Links to related cases: [{"case_id": ..., "relation": "variant"}]',
     )
+    patch_attempts: list[dict[str, str]] = Field(
+        default_factory=list,
+        description=(
+            "Dead-end patch attempts: each entry is "
+            '{"diff": "...", "test_output": "...", "reason": "..."}. '
+            "Stored so the agent never repeats a proven-broken fix strategy."
+        ),
+    )
 
     def to_search_text(self) -> str:
         """Build a single text blob for embedding — includes all searchable content."""

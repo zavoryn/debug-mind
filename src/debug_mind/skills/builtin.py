@@ -78,6 +78,7 @@ class MemorySkill(Skill):
                 environment=params.get("environment", {}),
                 diagnosis_steps=params.get("diagnosis_steps", []),
                 similar_case_ids=params.get("similar_case_ids", []),
+                patch_attempts=params.get("patch_attempts", []),
             )
             memory.save(case)
             return {"saved": True, "case_id": case.id}, "save"

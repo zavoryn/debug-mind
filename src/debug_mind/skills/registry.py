@@ -109,10 +109,12 @@ def get_default_registry() -> SkillRegistry:
             JvmSkill,
             MemorySkill,
         )
+        from debug_mind.skills.patch import PatchSkill
 
         registry.register(MemorySkill())
         registry.register(CodebaseSkill())
         registry.register(JvmSkill())
+        registry.register(PatchSkill())
         _default_registry = registry
     return _default_registry
 

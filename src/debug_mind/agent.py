@@ -50,7 +50,10 @@ SYSTEM_PROMPT = """You are DebugMind, an expert bug diagnosis agent with access 
 2. **Understand the Codebase** — If a project path is available, call `list_project_structure` and `search_code` to locate relevant code.
 3. **Read Relevant Code** — Use `read_file` to inspect suspicious code referenced in stack traces.
 4. **Analyze** — Correlate symptoms, error logs, source code, and any similar past cases.
-5. **Save** — Call `save_to_memory` to persist the diagnosis for future reference.
+5. **Fix (if project available)** — Use `propose_patch` to generate a diff, then `apply_and_test` to validate in a sandbox.
+   - If tests **pass**: the fix is confirmed. Save with status FIXED.
+   - If tests **fail**: record this patch as a dead-end in `patch_attempts` (include the diff and test output), then try a different approach. Never repeat a proven-broken fix.
+6. **Save** — Call `save_to_memory` to persist the diagnosis (and any patch_attempts) for future reference.
 
 ## Diagnosis Guidelines
 - Start from the stack trace — find the exact file and line.
@@ -100,6 +103,7 @@ class DiagnosticAgent:
             skill_names = ["memory"]
             if project_path:
                 skill_names.append("codebase")
+                skill_names.append("patch")
         else:
             skill_names = list(skills)
         self._skills: list[Skill] = self._skill_registry.load_by_names(skill_names)
