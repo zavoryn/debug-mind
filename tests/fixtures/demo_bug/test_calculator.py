@@ -18,7 +18,7 @@ def test_multiply():
 
 
 def test_divide():
-    assert divide(10, 2) == 5.0   # FAILS with bug: returns 20.0 instead of 5.0
+    assert divide(10, 2) == 5.0  # FAILS with bug: returns 20.0 instead of 5.0
     assert divide(9, 3) == 3.0
     assert divide(7, 1) == 7.0
 

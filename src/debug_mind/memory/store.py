@@ -44,8 +44,15 @@ _RE_VERSION = re.compile(r"^- version:\s*(\d+)", re.MULTILINE)
 _RE_LINKS = re.compile(r"^- links:\s*(\[.*\])", re.MULTILINE)
 _RE_SECTIONS: dict[str, re.Pattern] = {
     hdr: re.compile(rf"## {re.escape(hdr)}\s*\n(.*?)(?=\n## |\n---)", re.DOTALL)
-    for hdr in ("Symptoms", "Root Cause", "Fix Suggestion", "Error Log", "Environment",
-                "Diagnosis Steps", "Tags")
+    for hdr in (
+        "Symptoms",
+        "Root Cause",
+        "Fix Suggestion",
+        "Error Log",
+        "Environment",
+        "Diagnosis Steps",
+        "Tags",
+    )
 }
 
 DEFAULT_MEMORY_DIR = Path(os.environ.get("DEBUG_MIND_MEMORY_DIR", "memory"))
@@ -274,9 +281,7 @@ class MemoryStore:
         _log.info("case saved", extra={"op": "save", "case_id": case.id})
         return case
 
-    def _find_dedup_target(
-        self, case: BugCase
-    ) -> tuple[BugCase | None, list[float] | None]:
+    def _find_dedup_target(self, case: BugCase) -> tuple[BugCase | None, list[float] | None]:
         """Check if a verified case with high similarity already exists.
 
         Returns (existing_case, embedding) so the caller can reuse the embedding

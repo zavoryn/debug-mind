@@ -31,10 +31,22 @@ _log = get_logger("patch_skill")
 
 # Directories to exclude from sandbox copy (expensive / irrelevant to tests)
 _SANDBOX_SKIP_DIRS = {
-    ".git", ".venv", "venv", "__pycache__", "node_modules",
-    ".pytest_cache", ".ruff_cache", ".mypy_cache",
-    "dist", "build", "target", ".next", ".nuxt",
-    "chroma", ".idea", ".gradle",
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "node_modules",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".mypy_cache",
+    "dist",
+    "build",
+    "target",
+    ".next",
+    ".nuxt",
+    "chroma",
+    ".idea",
+    ".gradle",
 }
 
 # Hard cap on test run time (seconds)
@@ -79,8 +91,7 @@ def propose_patch(
 
     diff_text = "\n".join(diff_lines) + "\n"
     changed_lines = sum(
-        1 for ln in diff_lines
-        if ln.startswith(("+", "-")) and not ln.startswith(("+++", "---"))
+        1 for ln in diff_lines if ln.startswith(("+", "-")) and not ln.startswith(("+++", "---"))
     )
 
     return {
@@ -240,9 +251,7 @@ def _apply_diff(target_file: Path, diff_text: str) -> dict[str, Any]:
     return {"ok": True, "reason": ""}
 
 
-def _apply_hunk(
-    lines: list[str], start_1indexed: int, hunk: list[str]
-) -> dict[str, Any]:
+def _apply_hunk(lines: list[str], start_1indexed: int, hunk: list[str]) -> dict[str, Any]:
     """Apply a single parsed hunk to lines.
 
     Walks the hunk body sequentially:

@@ -158,6 +158,7 @@ class DiagnosticAgent:
 
     def _call_provider(self, **kwargs):
         """Call the LLM provider with retry on transient errors."""
+
         @self._retry_decorator
         def _do_call():
             return self.provider.create_message(**kwargs)
