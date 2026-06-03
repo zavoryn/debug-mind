@@ -483,55 +483,97 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
 
 
 # ── Context compression ───────────────────────────────────────────────────────
+#
+# Design: inspired by MiniCode's snip-compact pattern (which itself reflects
+# Claude Code's context management approach): deterministic middle-history
+# trimming that *protects* critical turns from removal.
+#
+# Two tiers of protection (never truncated):
+#   1. First message  — the original bug report; always needed for grounding.
+#   2. Last 2 messages — most recent reasoning + tool results; always needed.
+#   3. "Anchor" turns  — any turn containing save_to_memory or an error marker;
+#      these record diagnosis conclusions and failure signals that must survive.
+#
+# Non-anchor middle turns have their tool_result content truncated first
+# (keep first _TOOL_RESULT_KEEP_CHARS chars + marker). This mirrors MiniCode's
+# tool-result-storage: large outputs are replaced with a preview, but the turn
+# itself stays so the model can still see the tool was called and what it found.
 
-# Soft limit: total chars across all messages before we start trimming.
+# Soft limit: total chars before we start trimming.
 # ~60K chars ≈ ~15K tokens, leaving headroom in a 200K-token context window.
 _CONTEXT_CHAR_LIMIT = 60_000
-# How many chars to keep from each old tool result when truncating.
+# Chars to keep from each old tool result when truncating.
 _TOOL_RESULT_KEEP_CHARS = 300
+# Keywords that mark a turn as an "anchor" — protected from truncation.
+_ANCHOR_TOOLS = {"save_to_memory", "apply_and_test"}
+_ERROR_MARKERS = {"error", "failed", "exception", "traceback", "budget exceeded"}
+
+
+def _is_anchor_message(msg: dict[str, Any]) -> bool:
+    """Return True if this message must not be truncated.
+
+    Anchors: turns that contain save_to_memory / apply_and_test tool calls,
+    or tool results that carry error/failure signals. Mirrors MiniCode's
+    protection of edit-file and error turns in snip compact.
+    """
+    content = msg.get("content")
+    if not isinstance(content, list):
+        return False
+    for part in content:
+        # Protect tool_use blocks for anchor tools
+        if part.get("type") == "tool_use" and part.get("name") in _ANCHOR_TOOLS:
+            return True
+        # Protect tool_result blocks that contain error markers
+        if part.get("type") == "tool_result":
+            raw = str(part.get("content", "")).lower()
+            if any(marker in raw for marker in _ERROR_MARKERS):
+                return True
+    return False
 
 
 def _compress_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Truncate old tool_result content when the conversation grows too large.
+    """Trim old tool_result content when the conversation grows too large.
 
-    Strategy (no LLM call needed — pure heuristic):
-    1. Measure total chars across all messages.
-    2. If under the limit, return unchanged.
-    3. Otherwise walk from the OLDEST middle messages and shorten tool_result
-       content blocks to _TOOL_RESULT_KEEP_CHARS each, until under the limit.
+    Protection rules (never modified):
+    - messages[0]       : original bug report
+    - messages[-2:]     : most recent assistant turn + tool results
+    - anchor turns      : save_to_memory, apply_and_test, error turns
 
-    The first message (bug report) and the last two messages (most recent
-    assistant turn + its tool results) are never touched — they're essential.
-
-    This is intentionally conservative: a simple truncation is far better than
-    hallucinating a summary, and avoids an extra LLM round-trip.
+    Non-anchor middle turns have their tool_result content truncated to
+    _TOOL_RESULT_KEEP_CHARS, keeping a [truncated] marker so the model
+    still knows the tool was called and what it partially found.
     """
     total_chars = sum(len(str(m.get("content", ""))) for m in messages)
     if total_chars <= _CONTEXT_CHAR_LIMIT:
         return messages
 
-    # Work on a shallow copy of the list; we'll deep-copy only modified entries.
     result = list(messages)
-    # Candidate range: skip first (bug report) and last 2 (most recent turn).
-    for i in range(1, max(1, len(result) - 2)):
+    protected_tail = max(0, len(result) - 2)
+
+    for i in range(1, protected_tail):
         if total_chars <= _CONTEXT_CHAR_LIMIT:
             break
+        if _is_anchor_message(result[i]):
+            continue  # never touch anchor turns
+
         msg = result[i]
         content = msg.get("content")
         if not isinstance(content, list):
             continue
+
         new_parts = []
         changed = False
         for part in content:
             if part.get("type") == "tool_result":
                 raw = part.get("content", "")
                 if isinstance(raw, str) and len(raw) > _TOOL_RESULT_KEEP_CHARS:
-                    trimmed = raw[:_TOOL_RESULT_KEEP_CHARS] + " …[truncated]"
+                    trimmed = raw[:_TOOL_RESULT_KEEP_CHARS] + " …[truncated for context]"
                     new_parts.append({**part, "content": trimmed})
                     total_chars -= len(raw) - len(trimmed)
                     changed = True
                     continue
             new_parts.append(part)
+
         if changed:
             result[i] = {**msg, "content": new_parts}
 
