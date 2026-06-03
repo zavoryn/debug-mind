@@ -61,4 +61,4 @@ target-version = "py310"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-norecursedirs = ["tests/fixtures"]
+norecursedirs = ["fixtures", ".claude", ".git", ".venv", "venv", "dist", "build"]
