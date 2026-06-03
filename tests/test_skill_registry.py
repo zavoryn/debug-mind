@@ -196,7 +196,7 @@ class TestAgentSkillLoading:
         names = {t["name"] for t in agent.tools}
         assert {"search_memory", "save_to_memory"}.issubset(names)
         assert {"search_code", "read_file"}.issubset(names)
-        assert agent._skill_names == ["memory", "codebase"]
+        assert agent._skill_names == ["memory", "codebase", "patch"]
 
     def test_explicit_skills_bypasses_auto_codebase(self, memory, tmp_path):
         # Even with project_path, explicit ["memory"] must NOT add codebase
