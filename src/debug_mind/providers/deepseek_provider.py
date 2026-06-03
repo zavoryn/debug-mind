@@ -40,7 +40,9 @@ class DeepSeekProvider(OpenAIProvider):
 
     @property
     def default_model(self) -> str:
-        return "deepseek-chat"
+        # deepseek-v4-flash: fast, cheap, tool-calling supported — default for agentic loops
+        # Override via DEBUG_MIND_MODEL=deepseek-v4-pro for higher quality
+        return "deepseek-v4-flash"
 
     def is_retryable(self, error: Exception) -> bool:
         try:

@@ -43,7 +43,9 @@ class GLMProvider(OpenAIProvider):
 
     @property
     def default_model(self) -> str:
-        return "glm-4-flash"
+        # glm-4.5: latest GLM generation, tool-calling supported
+        # Override via DEBUG_MIND_MODEL=glm-4.5-flash for faster/cheaper runs
+        return "glm-4.5"
 
     def is_retryable(self, error: Exception) -> bool:
         try:
