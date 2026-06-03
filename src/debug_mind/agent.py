@@ -134,12 +134,29 @@ class DiagnosticAgent:
         )
 
     def _create_provider(self, api_key: str | None) -> LLMProvider:
-        """Create provider based on DEBUG_MIND_PROVIDER env or default to Anthropic."""
+        """Create provider based on DEBUG_MIND_PROVIDER env or default to Anthropic.
+
+        Supported values for DEBUG_MIND_PROVIDER:
+            anthropic  (default) — Claude via ANTHROPIC_API_KEY
+            openai               — GPT via OPENAI_API_KEY
+            deepseek             — DeepSeek via DEEPSEEK_API_KEY
+            glm / zhipu          — Zhipu GLM via ZHIPU_API_KEY
+        """
         choice = os.environ.get("DEBUG_MIND_PROVIDER", "anthropic").lower()
         if choice == "openai":
             from debug_mind.providers.openai_provider import OpenAIProvider
 
             return OpenAIProvider(api_key=api_key or os.environ.get("OPENAI_API_KEY"))
+        if choice == "deepseek":
+            from debug_mind.providers.deepseek_provider import DeepSeekProvider
+
+            return DeepSeekProvider(api_key=api_key or os.environ.get("DEEPSEEK_API_KEY"))
+        if choice in ("glm", "zhipu"):
+            from debug_mind.providers.glm_provider import GLMProvider
+
+            return GLMProvider(
+                api_key=api_key or os.environ.get("ZHIPU_API_KEY") or os.environ.get("GLM_API_KEY")
+            )
         return AnthropicProvider(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
 
     def _create_retry_decorator(self):
@@ -244,6 +261,8 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
         for _turn in range(max_turns):
             if stream:
                 yield ("turn", {"turn": _turn + 1, "max_turns": max_turns})
+            # Context compression: truncate old tool results before they fill the window
+            messages = _compress_messages(messages)
             if time.monotonic() > _deadline:
                 _log.warning(
                     "wall-clock timeout reached",
@@ -461,3 +480,64 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
             return {"error": f"Unknown tool: {name}"}, None
         context = {"memory": self.memory, "project_path": self.project_path}
         return skill.execute(name, params, context)
+
+
+# ── Context compression ───────────────────────────────────────────────────────
+
+# Soft limit: total chars across all messages before we start trimming.
+# ~60K chars ≈ ~15K tokens, leaving headroom in a 200K-token context window.
+_CONTEXT_CHAR_LIMIT = 60_000
+# How many chars to keep from each old tool result when truncating.
+_TOOL_RESULT_KEEP_CHARS = 300
+
+
+def _compress_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Truncate old tool_result content when the conversation grows too large.
+
+    Strategy (no LLM call needed — pure heuristic):
+    1. Measure total chars across all messages.
+    2. If under the limit, return unchanged.
+    3. Otherwise walk from the OLDEST middle messages and shorten tool_result
+       content blocks to _TOOL_RESULT_KEEP_CHARS each, until under the limit.
+
+    The first message (bug report) and the last two messages (most recent
+    assistant turn + its tool results) are never touched — they're essential.
+
+    This is intentionally conservative: a simple truncation is far better than
+    hallucinating a summary, and avoids an extra LLM round-trip.
+    """
+    total_chars = sum(len(str(m.get("content", ""))) for m in messages)
+    if total_chars <= _CONTEXT_CHAR_LIMIT:
+        return messages
+
+    # Work on a shallow copy of the list; we'll deep-copy only modified entries.
+    result = list(messages)
+    # Candidate range: skip first (bug report) and last 2 (most recent turn).
+    for i in range(1, max(1, len(result) - 2)):
+        if total_chars <= _CONTEXT_CHAR_LIMIT:
+            break
+        msg = result[i]
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        new_parts = []
+        changed = False
+        for part in content:
+            if part.get("type") == "tool_result":
+                raw = part.get("content", "")
+                if isinstance(raw, str) and len(raw) > _TOOL_RESULT_KEEP_CHARS:
+                    trimmed = raw[:_TOOL_RESULT_KEEP_CHARS] + " …[truncated]"
+                    new_parts.append({**part, "content": trimmed})
+                    total_chars -= len(raw) - len(trimmed)
+                    changed = True
+                    continue
+            new_parts.append(part)
+        if changed:
+            result[i] = {**msg, "content": new_parts}
+
+    if total_chars > _CONTEXT_CHAR_LIMIT:
+        _log.warning(
+            "context still large after compression",
+            extra={"total_chars": total_chars, "limit": _CONTEXT_CHAR_LIMIT},
+        )
+    return result
