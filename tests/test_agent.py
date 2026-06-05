@@ -147,3 +147,64 @@ class TestBuildUserMessage:
     def test_without_project_path(self, agent):
         msg = agent._build_user_message("bug", "", None)
         assert "Project Path" not in msg
+
+
+class TestToolParamValidation:
+    """_validate_tool_params + _execute_tool self-correction behaviour."""
+
+    def test_missing_required_field_returns_error_not_raise(self, agent):
+        """LLM omits a required field → structured error dict, no exception."""
+        result, side_effect = agent._execute_tool("search_memory", {})
+        assert "error" in result
+        assert "query" in result["error"]  # tells model which field is missing
+        assert "hint" in result            # nudges model to self-correct
+        assert side_effect is None
+
+    def test_wrong_type_returns_error_not_raise(self, agent):
+        """LLM sends wrong type → structured error dict, no exception."""
+        result, side_effect = agent._execute_tool("search_memory", {"query": 999})
+        assert "error" in result
+        assert "string" in result["error"]
+
+    def test_valid_params_execute_normally(self, agent):
+        """Valid params bypass validation and execute the real tool."""
+        result, side_effect = agent._execute_tool(
+            "search_memory", {"query": "redis connection error"}
+        )
+        # Should succeed (returns found/cases, not an error)
+        assert "error" not in result
+        assert "found" in result
+        assert side_effect == "search"
+
+    def test_unknown_tool_still_errors(self, agent):
+        """Unknown tool name returns error (unchanged behaviour)."""
+        result, _ = agent._execute_tool("nonexistent_tool", {})
+        assert "error" in result
+        assert "Unknown tool" in result["error"]
+
+    def test_validate_tool_params_directly(self):
+        """Unit test for _validate_tool_params."""
+        from debug_mind.agent import _validate_tool_params
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "top_k": {"type": "integer"},
+            },
+            "required": ["query"],
+        }
+
+        # Missing required
+        err = _validate_tool_params("search_memory", {}, schema)
+        assert err is not None and "query" in err
+
+        # Wrong type
+        err = _validate_tool_params("search_memory", {"query": 123}, schema)
+        assert err is not None and "string" in err
+
+        # Valid
+        assert _validate_tool_params("search_memory", {"query": "test"}, schema) is None
+
+        # No schema = no validation
+        assert _validate_tool_params("any", {"x": 1}, {}) is None

@@ -112,6 +112,7 @@ class DiagnosticAgent:
         context = {"memory": memory, "project_path": project_path}
         self.tools = []
         self._tool_skill_map: dict[str, Skill] = {}
+        self._tool_schemas: dict[str, dict] = {}  # name → input_schema for validation
         for skill in self._skills:
             for tool in skill.get_tools(context):
                 if tool["name"] in self._tool_skill_map:
@@ -121,6 +122,7 @@ class DiagnosticAgent:
                     )
                 self.tools.append(tool)
                 self._tool_skill_map[tool["name"]] = skill
+                self._tool_schemas[tool["name"]] = tool.get("input_schema", {})
 
         self._retry_decorator = self._create_retry_decorator()
 
@@ -474,10 +476,33 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
         )
 
     def _execute_tool(self, name: str, params: dict) -> tuple[dict, str | None]:
-        """Execute a single tool call by dispatching to the owning skill."""
+        """Execute a single tool call by dispatching to the owning skill.
+
+        Validates LLM-generated parameters against the tool's input_schema BEFORE
+        execution. On failure, returns a structured error dict (not raises) so the
+        model can read it as a tool_result and self-correct its parameters — this is
+        the agentic tool-error self-healing pattern (inspired by MiniCode's tool
+        validation layer).
+        """
         skill = self._tool_skill_map.get(name)
         if skill is None:
             return {"error": f"Unknown tool: {name}"}, None
+
+        # ── Input validation ───────────────────────────────────────────────
+        schema = self._tool_schemas.get(name, {})
+        validation_error = _validate_tool_params(name, params, schema)
+        if validation_error:
+            _log.warning(
+                "tool param validation failed",
+                extra={"tool": name, "error": validation_error},
+            )
+            # Return structured error — NOT an exception — so the LLM sees it
+            # as a tool_result and can self-correct rather than the loop crashing.
+            return {
+                "error": validation_error,
+                "hint": "Fix the parameters and retry this tool call.",
+            }, None
+
         context = {"memory": self.memory, "project_path": self.project_path}
         return skill.execute(name, params, context)
 
@@ -529,6 +554,76 @@ def _is_anchor_message(msg: dict[str, Any]) -> bool:
             if any(marker in raw for marker in _ERROR_MARKERS):
                 return True
     return False
+
+
+# ── Tool parameter validation ─────────────────────────────────────────────────
+#
+# LLMs are probabilistic — they can generate tool calls with missing required
+# fields, wrong types, or malformed values. Without validation, the first
+# KeyError / TypeError propagates as an exception, killing the entire loop.
+#
+# Instead: validate params against the tool's input_schema, return a structured
+# error string. The loop then feeds it back as a tool_result, and the model
+# reads "Missing required field 'query'" and self-corrects its next call.
+#
+# This is the same pattern MiniCode uses (zod schema validation before execution)
+# adapted for Python with a zero-dependency implementation.
+
+_SCHEMA_TYPE_MAP: dict[str, type] = {
+    "string": str,
+    "integer": int,
+    "number": (int, float),  # type: ignore[assignment]
+    "boolean": bool,
+    "array": list,
+    "object": dict,
+}
+
+
+def _validate_tool_params(
+    tool_name: str,
+    params: dict[str, Any],
+    schema: dict[str, Any],
+) -> str | None:
+    """Validate LLM-generated tool params against the tool's input_schema.
+
+    Returns an error message string if invalid, None if valid.
+    Intentionally lenient: only checks required fields and basic types.
+    Extra fields are allowed (LLMs sometimes add helpful extras).
+    """
+    if not schema:
+        return None  # no schema to validate against, pass through
+
+    required: list[str] = schema.get("required", [])
+    properties: dict[str, Any] = schema.get("properties", {})
+
+    # 1. Check required fields are present and non-None
+    missing = [f for f in required if f not in params or params[f] is None]
+    if missing:
+        return (
+            f"Tool '{tool_name}' is missing required field(s): {missing}. "
+            f"Required: {required}. Got keys: {list(params.keys())}."
+        )
+
+    # 2. Check basic types for fields that are present
+    type_errors: list[str] = []
+    for field, value in params.items():
+        if field not in properties or value is None:
+            continue
+        expected_type_str = properties[field].get("type")
+        if not expected_type_str:
+            continue
+        expected_type = _SCHEMA_TYPE_MAP.get(expected_type_str)
+        if expected_type is None:
+            continue
+        if not isinstance(value, expected_type):
+            type_errors.append(
+                f"'{field}' should be {expected_type_str}, got {type(value).__name__}"
+            )
+
+    if type_errors:
+        return f"Tool '{tool_name}' parameter type error(s): {'; '.join(type_errors)}."
+
+    return None
 
 
 def _compress_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
