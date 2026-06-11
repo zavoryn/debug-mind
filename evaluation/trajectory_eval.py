@@ -264,7 +264,14 @@ def run_trajectory(
         elapsed = time.monotonic() - t0
         correct, score = judge_correctness(result, case)
         ta = analyze_tool_calls(result.diagnosis_steps)
-        fm = classify_failure(correct, ta, None, result.diagnosis_steps)
+        # Graceful degradation returns a partial result instead of raising —
+        # surface it as an error so it's classified BUDGET_EXCEEDED/API_ERROR
+        # rather than silently counted as a wrong answer.
+        degraded: str | None = None
+        if (result.reasoning or "").startswith("[Budget exceeded:"):
+            degraded = (result.reasoning or "").split("\n", 1)[0]
+            correct, score = False, 0.0
+        fm = classify_failure(correct, ta, degraded, result.diagnosis_steps)
         return TrajectoryResult(
             case_id=case.id,
             steps=len(result.diagnosis_steps),
@@ -275,6 +282,7 @@ def run_trajectory(
             correct=correct,
             correctness_score=round(score, 3),
             top_root_cause=(result.root_cause or "")[:200],
+            error=degraded,
             tool_analysis=ta,
             failure_mode=fm,
         )

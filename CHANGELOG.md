@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Memory ablation A/B experiment (`debug-mind eval --ablation`): same cases run
+  against a seeded vs an empty store (tools unchanged), with repeat-class /
+  novel-class group split and per-run store isolation
+- τ-bench-style stability metrics via `--runs k`: pass@k vs pass^k and the
+  flakiness gap between them
+- Self-learning round-trip (`debug-mind eval --learning-curve`): rounds against
+  an initially empty store where only the agent's own saves accumulate —
+  measures the memory flywheel end-to-end
+
+### Fixed
+- Eval CLI now resolves the API key for the provider selected via
+  `DEBUG_MIND_PROVIDER` instead of always requiring `ANTHROPIC_API_KEY`
+- Gracefully degraded agent runs (budget/API failures) are now classified as
+  `budget_exceeded`/`api_error` in trajectory eval instead of being silently
+  counted as wrong answers
+
 ## [0.1.0] - 2026-05-19
 
 ### Added

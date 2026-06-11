@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/python-3.10+-blue" alt="Python 3.10+" />
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" />
   <img src="https://img.shields.io/badge/MCP-compatible-purple" alt="MCP Compatible" />
-  <img src="https://img.shields.io/badge/tests-198_passed-brightgreen" alt="198 Tests" />
+  <img src="https://img.shields.io/badge/tests-276_passed-brightgreen" alt="276 Tests" />
   <img src="https://img.shields.io/badge/hit@1-0.92-orange" alt="hit@1=0.92" />
   <a href="https://github.com/zavoryn/debug-mind/actions/workflows/test.yml"><img src="https://github.com/zavoryn/debug-mind/actions/workflows/test.yml/badge.svg?branch=master" alt="tests" /></a>
   <a href="https://github.com/zavoryn/debug-mind/actions/workflows/lint.yml"><img src="https://github.com/zavoryn/debug-mind/actions/workflows/lint.yml/badge.svg?branch=master" alt="lint" /></a>
@@ -64,10 +64,11 @@
 |------|------|
 | hit@1（第一个结果命中正确根因） | **0.92** |
 | hit@3 | 0.97 |
-| 测试覆盖 | 198 个测试，0 失败 |
-| 冷启动（无历史案例）vs 有记忆 | 响应相关性提升约 40% |
+| 测试覆盖 | 276 个测试，0 失败 |
 
-> 评测方法：将已知 Bug 案例从库中隐藏，用症状描述查询，看检索结果是否能还原正确根因。详见 [`docs/EVALUATION.md`](docs/EVALUATION.md)。
+> 检索评测方法：将已知 Bug 案例从库中隐藏，用症状描述查询，看检索结果是否能还原正确根因。
+> 记忆的端到端增益用消融实验测量：`debug-mind eval --ablation`（同一批 case，有记忆 vs 空库对照，报告轮数 / 成本 / 正确率差值）；
+> 经验飞轮用 `debug-mind eval --learning-curve` 测量（空库起跑两轮，第二轮只靠第一轮自己存下的经验）。详见 [`docs/EVALUATION.md`](docs/EVALUATION.md)。
 
 ---
 
@@ -163,6 +164,10 @@ ChromaDB 作为可选项保留：`pip install debug-mind[chroma]`，一行环境
 
 最终公式：`blended = cosine × 0.75 + lexical × 0.25`，再乘上 verified 系数和 hit_count 对数权重。
 
+### 为什么自研控制循环，而不用 LangGraph / Agent SDK？
+
+因为这个项目的研究对象就是循环本身。预算守护（token/成本/挂钟三重限制）、超限优雅降级、工具参数校验与自我纠正、轨迹级评测埋点——这些都需要对循环内部每一步的控制权，而框架恰好把这一层封装掉了。框架的价值在于快速搭业务应用；当你要测量和优化的就是 Agent 行为本身时，几百行透明的循环代码比框架的黑盒更有价值。代价是自己处理重试、流式、多 provider 适配——这些实现都在 `agent.py` 和 `providers/`，可以逐行审查。
+
 ### 为什么用 ReAct 而不是单轮提示？
 
 单轮提示需要用户在输入时提供所有上下文，但 Bug 诊断本质上是迭代的：先看错误日志 → 定位到某文件 → 读该文件 → 发现真正问题在另一个依赖里。ReAct（Reason + Act）允许 Agent 动态决定"下一步需要看什么"，适合信息不完整的真实场景。
@@ -257,7 +262,10 @@ debug-mind reverify [--days 90] # 列出需要重新确认的老案例
 debug-mind link <A> <B> [--relation caused_by|variant|fixed_by]
 
 # 评测与审计
-debug-mind eval [--search-only]
+debug-mind eval [--search-only]              # 检索质量（hit@k，进 CI）
+debug-mind eval --trajectory [--sample N]    # 轨迹评测（步数/token/成本/失败分类）
+debug-mind eval --ablation [--runs K]        # 记忆消融 A/B + pass^k 稳定性
+debug-mind eval --learning-curve [--rounds N] # 经验飞轮：空库起跑，第二轮靠自存经验
 debug-mind audit [--since 24h] [--op save|verify|delete]
 
 # 集成
@@ -284,11 +292,16 @@ debug-mind web     # 启动 Gradio Web UI（默认端口 7860）
 
 ## 演进方向：从诊断工具到自治闭环
 
-当前 DebugMind 是 **Level 1**——人工触发、AI 给建议、人去修。真正的价值在于把这个链路自动化到底：
+当前 DebugMind 处于 **Level 1.5**——人工触发，AI 诊断后能生成补丁（diff）并在沙箱里跑测试验证，失败的修法记为"死路"写回记忆；但触发靠人、合并靠人。真正的价值在于把这个链路自动化到底：
 
 ```
-Level 1（现在）
+Level 1
   人工输入症状 → AI 诊断 → 人工修复
+
+Level 1.5（现在）
+  人工输入症状 → AI 诊断 → 生成补丁 → 沙箱跑测试
+                                ↓通过        ↓失败
+                          输出可提交修复   记为死路、换方案重试
 
 Level 2（近期目标）
   告警/工单触发 → AI 自动诊断 → 输出修复方案 → 人工审核后合并
@@ -319,7 +332,9 @@ Level 3（终态）
 - [x] SQLite / ChromaDB 双后端
 - [x] Gradio Web UI + OpenAI provider 支持
 - [x] 记忆生命周期：衰减、再验证、案例关联图
-- [x] 198 个测试 + CI/CD 工作流
+- [x] 自愈闭环单机版：propose_patch 生成 diff → 沙箱跑测试 → 失败修法记为死路写回记忆
+- [x] 记忆消融 A/B（`eval --ablation`）+ pass^k 稳定性 + 自学习曲线（`eval --learning-curve`）
+- [x] 276 个测试 + CI/CD 工作流
 
 **近期（Level 2）**
 - [ ] PyPI 正式发布（`pip install debug-mind`）
@@ -328,9 +343,9 @@ Level 3（终态）
 - [ ] 社区基准案例库（100+ 真实 Bug 类型）
 
 **中期（Level 3）**
-- [ ] 自治修复执行器：AI 生成 patch → 沙箱跑测试 → 通过则开 PR
+- [ ] 自动开 PR：沙箱验证通过的补丁自动提 PR + 关工单（补丁生成与沙箱验证已在 Level 1.5 完成）
 - [ ] 失败回滚机制：测试不通过自动回退，工单重新入队 + 升级标记
-- [ ] 双向记忆写入：成功修复 / 失败尝试都写入记忆库，形成完整经验图谱
+- [ ] 容器级沙箱：当前沙箱为文件级隔离，升级为容器级以支持不可信代码
 - [ ] 多项目命名空间 + RBAC 权限隔离
 
 ---
@@ -339,8 +354,8 @@ Level 3（终态）
 
 ```bash
 pip install -e ".[dev]"
-pytest                        # 198 个测试
-ruff check src/ tests/        # lint
+pytest                        # 276 个测试
+ruff check src/ tests/ evaluation/  # lint
 debug-mind eval --search-only # 检索质量评测（期望 hit@1 ≥ 0.85）
 ```
 

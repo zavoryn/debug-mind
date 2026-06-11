@@ -13,8 +13,19 @@ memory/chroma/
 memory/sqlite/
 memory/cases/
 memory/audit.jsonl
+memory/default/
 .claude/
 *_PLAN.md
 private/
 面试/
 evaluation/results/
+# Local working screenshots & tooling scratch (curated screenshots live in docs/)
+/hf-*.png
+docs/hf-demo-*.png
+docs/hf-0[257]-*.png
+docs/hf-gradio-header.png
+docs/hf-header.png
+docs/hf-search-result.png
+docs/hf-stats.png
+docs/superpowers/
+.playwright-mcp/

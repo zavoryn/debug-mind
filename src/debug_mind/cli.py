@@ -800,6 +800,30 @@ def audit(since: str, op: str | None):
     console.print(table)
 
 
+_PROVIDER_KEY_ENVS = {
+    "anthropic": ("ANTHROPIC_API_KEY",),
+    "openai": ("OPENAI_API_KEY",),
+    "deepseek": ("DEEPSEEK_API_KEY",),
+    "glm": ("ZHIPU_API_KEY", "GLM_API_KEY"),
+    "zhipu": ("ZHIPU_API_KEY", "GLM_API_KEY"),
+}
+
+
+def _eval_api_key() -> tuple[str | None, str]:
+    """Resolve the API key for the provider chosen via DEBUG_MIND_PROVIDER.
+
+    Returns (key_or_none, name_of_expected_env_var) so callers can print a
+    provider-correct error instead of always demanding ANTHROPIC_API_KEY.
+    """
+    provider = os.environ.get("DEBUG_MIND_PROVIDER", "anthropic").lower()
+    env_names = _PROVIDER_KEY_ENVS.get(provider, ("ANTHROPIC_API_KEY",))
+    for name in env_names:
+        key = os.environ.get(name)
+        if key:
+            return key, name
+    return None, env_names[0]
+
+
 @main.command()
 @click.option("--search-only", is_flag=True, help="Only evaluate retrieval, no API key needed")
 @click.option("--case", "case_id", default="", help="Run a single benchmark case by ID")
@@ -819,6 +843,30 @@ def audit(since: str, op: str | None):
     type=int,
     help="Limit trajectory eval to N first cases (default: all). Useful for smoke tests.",
 )
+@click.option(
+    "--ablation",
+    is_flag=True,
+    help="Memory ablation A/B: same cases with seeded vs empty memory. "
+    "LLM calls = cases × 2 × runs. Requires ANTHROPIC_API_KEY.",
+)
+@click.option(
+    "--runs",
+    default=1,
+    type=int,
+    help="Repeat each ablation case k times and report pass@k / pass^k (default: 1).",
+)
+@click.option(
+    "--learning-curve",
+    is_flag=True,
+    help="Self-learning round-trip: run cases against an initially EMPTY store for "
+    "N rounds; the agent's own saves are the only memory. Requires ANTHROPIC_API_KEY.",
+)
+@click.option(
+    "--rounds",
+    default=2,
+    type=int,
+    help="Rounds for --learning-curve (default: 2).",
+)
 def eval(
     search_only: bool,
     case_id: str,
@@ -826,15 +874,62 @@ def eval(
     min_hit_at_5: float | None,
     trajectory: bool,
     sample: int,
+    ablation: bool,
+    runs: int,
+    learning_curve: bool,
+    rounds: int,
 ):
     """Evaluate memory retrieval or agent trajectory quality."""
     from evaluation.dataset import load_all_cases, load_case
     from evaluation.benchmark import run_eval, format_results
 
-    if trajectory:
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if ablation or learning_curve:
+        api_key, key_env = _eval_api_key()
         if not api_key:
-            console.print("[red]Error: ANTHROPIC_API_KEY required for --trajectory eval.[/red]")
+            console.print(f"[red]Error: {key_env} required for this experiment.[/red]")
+            sys.exit(1)
+
+        cases = [load_case(case_id)] if case_id else load_all_cases()
+        cases = [c for c in cases if c is not None]
+        if not cases:
+            console.print("[red]No benchmark cases found.[/red]")
+            sys.exit(1)
+        sample_n = sample if sample > 0 else None
+        n_cases = min(sample_n, len(cases)) if sample_n else len(cases)
+
+        if ablation:
+            from evaluation.experiments import format_ablation, run_ablation
+
+            total_calls = n_cases * 2 * max(runs, 1)
+            console.print(
+                f"[bold blue]Memory ablation A/B: {n_cases} case(s) × 2 arms × "
+                f"{max(runs, 1)} run(s) = {total_calls} agent runs (paid API).[/bold blue]"
+            )
+            report, path = run_ablation(
+                cases=cases, sample=sample_n, runs=runs, api_key=api_key
+            )
+            console.print(format_ablation(report))
+        else:
+            from evaluation.experiments import format_self_learning, run_self_learning
+
+            total_calls = n_cases * max(rounds, 1)
+            console.print(
+                f"[bold blue]Self-learning round-trip: {n_cases} case(s) × "
+                f"{max(rounds, 1)} round(s) = {total_calls} agent runs (paid API).[/bold blue]"
+            )
+            report, path = run_self_learning(
+                cases=cases, sample=sample_n, rounds=rounds, api_key=api_key
+            )
+            console.print(format_self_learning(report))
+
+        if path:
+            console.print(f"\n[dim]Wrote raw results to {path}[/dim]")
+        return
+
+    if trajectory:
+        api_key, key_env = _eval_api_key()
+        if not api_key:
+            console.print(f"[red]Error: {key_env} required for --trajectory eval.[/red]")
             sys.exit(1)
         from evaluation.trajectory_eval import (
             run_trajectory_eval,

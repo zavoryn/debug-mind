@@ -123,5 +123,58 @@ The aggregate row in the console output (and in
 3. **Pre-seeded memory.** Each run seeds a temp `MemoryStore` from
    `evaluation/seed_cases/` so the agent has prior cases to retrieve.
    That mirrors the production "cold start ≠ warm cache" gap; cold-cache
-   numbers will be much worse.
+   numbers are measured separately by the ablation below.
+
+## Memory-benefit experiments
+
+Trajectory eval measures behaviour on one fixed, seeded store. It cannot
+answer the project's core claim — *does memory causally make diagnosis
+cheaper?* — because there is no control group. `evaluation/experiments.py`
+adds the three experiment designs the memory-systems literature uses.
+
+### Ablation A/B (`--ablation`)
+
+```bash
+debug-mind eval --ablation --sample 5        # smoke (5 cases × 2 arms)
+debug-mind eval --ablation --runs 3          # full, with pass^k stability
+```
+
+Same cases, same agent, same tools; the only variable is memory **content**:
+
+- `with_memory` arm — store cloned from the seeded template per run;
+- `no_memory` arm — store starts empty. The memory tools stay installed
+  (`search_memory` simply returns nothing): removing them would change the
+  agent's action space and prompt, contaminating the A/B with a second
+  variable.
+
+Cases are split by whether a same-class seed exists in memory:
+
+- **repeat-class** (12/50) — memory is expected to cut steps/cost and lift
+  correctness; this is the headline delta.
+- **novel-class** (38/50) — the guard group: memory must not *mislead* the
+  agent on bug classes it has never seen (delta ≈ 0 expected).
+
+Every single run gets a fresh store clone, so one run's `save_to_memory`
+can never leak into another run — unlike trajectory eval, where the shared
+accumulating store is intentional.
+
+With `--runs k > 1` the report adds τ-bench-style stability metrics:
+`pass@k` (≥1 of k runs correct — potential) vs `pass^k` (all k runs
+correct — reliability); the gap between them is flakiness.
+
+### Self-learning round-trip (`--learning-curve`)
+
+```bash
+debug-mind eval --learning-curve --rounds 2
+```
+
+One shared store, starting **empty** — no curated seeds at all. Round 1
+diagnoses every case cold; whatever the agent chooses to `save_to_memory`
+is the only knowledge that accumulates. Round 2 re-runs the same cases
+against what round 1 left behind. The round-1 → round-2 delta in steps,
+cost, and correctness is the flywheel ("每次诊断都让下一次更快") measured
+end-to-end, including the agent's own save quality.
+
+Results land in `evaluation/results/ablation_<ts>.json` and
+`self_learning_<ts>.json`.
 
