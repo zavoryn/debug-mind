@@ -15,6 +15,94 @@ from debug_mind.providers.base import (
 )
 
 
+def _part_as_dict(part: Any) -> dict[str, Any]:
+    """Normalize a content part to a dict.
+
+    The agent's history mixes two shapes: tool_result parts are plain dicts,
+    but assistant turns carry the provider-agnostic LLMContentBlock dataclass.
+    """
+    if isinstance(part, dict):
+        return part
+    return {
+        "type": part.type,
+        "text": part.text,
+        "id": part.id,
+        "name": part.name,
+        "input": part.input,
+    }
+
+
+def to_openai_messages(
+    messages: list[dict[str, Any]], system: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Convert Anthropic-shaped history to the OpenAI chat format.
+
+    Protocol constraint: every `role:"tool"` result must be preceded by an
+    assistant message whose `tool_calls` contains the matching id — so
+    assistant tool_use blocks MUST be round-tripped, not dropped.
+    """
+    openai_msgs: list[dict[str, Any]] = []
+    for block in system:
+        if block.get("type") == "text":
+            openai_msgs.append({"role": "system", "content": block["text"]})
+
+    for msg in messages:
+        role = msg["role"]
+        content = msg.get("content", "")
+        if isinstance(content, str):
+            openai_msgs.append({"role": role, "content": content})
+            continue
+
+        text_parts: list[str] = []
+        tool_calls: list[dict[str, Any]] = []
+        tool_results: list[dict[str, Any]] = []
+        for raw in content:
+            part = _part_as_dict(raw)
+            ptype = part.get("type")
+            if ptype == "text":
+                text_parts.append(part.get("text", ""))
+            elif ptype == "tool_use":
+                tool_calls.append(
+                    {
+                        "id": part.get("id", ""),
+                        "type": "function",
+                        "function": {
+                            "name": part.get("name", ""),
+                            "arguments": json.dumps(
+                                part.get("input", {}), ensure_ascii=False
+                            ),
+                        },
+                    }
+                )
+            elif ptype == "tool_result":
+                raw_result = part.get("content", "")
+                tool_results.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": part.get("tool_use_id", ""),
+                        "content": (
+                            raw_result
+                            if isinstance(raw_result, str)
+                            else json.dumps(raw_result, ensure_ascii=False)
+                        ),
+                    }
+                )
+
+        if role == "assistant" and tool_calls:
+            openai_msgs.append(
+                {
+                    "role": "assistant",
+                    "content": "\n".join(text_parts) or None,
+                    "tool_calls": tool_calls,
+                }
+            )
+        elif text_parts:
+            openai_msgs.append({"role": role, "content": "\n".join(text_parts)})
+        openai_msgs.extend(tool_results)
+
+    return openai_msgs
+
+
 class OpenAIProvider(LLMProvider):
     def __init__(self, api_key: str | None = None):
         try:
@@ -38,37 +126,7 @@ class OpenAIProvider(LLMProvider):
         max_tokens: int,
         **kwargs: Any,
     ) -> LLMResponse:
-        # Build OpenAI-format messages
-        openai_msgs: list[dict[str, Any]] = []
-        for block in system:
-            if block.get("type") == "text":
-                openai_msgs.append({"role": "system", "content": block["text"]})
-
-        for msg in messages:
-            role = msg["role"]
-            content = msg.get("content", "")
-            if isinstance(content, str):
-                openai_msgs.append({"role": role, "content": content})
-            elif isinstance(content, list):
-                # Multi-part content — convert tool results
-                text_parts = []
-                tool_calls = []
-                for part in content:
-                    if part.get("type") == "text":
-                        text_parts.append(part["text"])
-                    elif part.get("type") == "tool_result":
-                        # OpenAI needs the tool_call_id
-                        tool_calls.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": part.get("tool_use_id", ""),
-                                "content": part.get("content", ""),
-                            }
-                        )
-                if text_parts:
-                    openai_msgs.append({"role": role, "content": "\n".join(text_parts)})
-                if tool_calls:
-                    openai_msgs.extend(tool_calls)
+        openai_msgs = to_openai_messages(messages, system)
 
         # Convert tools
         openai_tools = anthropic_tools_to_openai(tools) if tools else None

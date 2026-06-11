@@ -25,6 +25,13 @@ _DEFAULT_PRICING = {
         "cache_read": 0.30,
         "cache_write": 3.75,
     },
+    # DeepSeek official pricing (2026-04, api-docs.deepseek.com)
+    "deepseek-v4-flash": {
+        "input": 0.14,
+        "output": 0.28,
+        "cache_read": 0.0028,
+        "cache_write": 0.0,
+    },
 }
 
 

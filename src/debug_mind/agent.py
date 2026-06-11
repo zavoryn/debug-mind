@@ -94,6 +94,10 @@ class DiagnosticAgent:
         # Provider: explicit > env choice > default Anthropic
         self.provider = provider or self._create_provider(api_key)
         self.model = model or self.provider.default_model
+        # Cost estimation must price against the model actually in use, not
+        # the TokenBudget default — otherwise non-Claude runs report ~20x off.
+        if self.budget is not None:
+            self.budget.model = self.model
 
         # Skill loading — default behaviour mirrors pre-Phase-6:
         #   no skills arg → memory + (codebase iff project_path)
