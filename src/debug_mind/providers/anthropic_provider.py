@@ -7,12 +7,22 @@ from typing import Any
 
 import anthropic
 
-from debug_mind.providers.base import LLMProvider, LLMResponse, LLMUsage, LLMContentBlock
+from debug_mind.providers.base import (
+    HTTP_TIMEOUT_SECONDS,
+    LLMContentBlock,
+    LLMProvider,
+    LLMResponse,
+    LLMUsage,
+)
 
 
 class AnthropicProvider(LLMProvider):
     def __init__(self, api_key: str | None = None):
-        self.client = anthropic.Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
+        self.client = anthropic.Anthropic(
+            api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"),
+            timeout=HTTP_TIMEOUT_SECONDS,
+            max_retries=0,
+        )
 
     @property
     def default_model(self) -> str:

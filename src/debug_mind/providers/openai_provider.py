@@ -7,6 +7,7 @@ import os
 from typing import Any
 
 from debug_mind.providers.base import (
+    HTTP_TIMEOUT_SECONDS,
     LLMProvider,
     LLMResponse,
     LLMUsage,
@@ -111,7 +112,11 @@ class OpenAIProvider(LLMProvider):
             raise ImportError(
                 "openai package is required for OpenAI provider. Install with: pip install openai"
             )
-        self.client = OpenAI(api_key=api_key or os.environ.get("OPENAI_API_KEY"))
+        self.client = OpenAI(
+            api_key=api_key or os.environ.get("OPENAI_API_KEY"),
+            timeout=HTTP_TIMEOUT_SECONDS,
+            max_retries=0,
+        )
 
     @property
     def default_model(self) -> str:

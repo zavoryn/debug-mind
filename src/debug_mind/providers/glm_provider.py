@@ -39,7 +39,14 @@ class GLMProvider(OpenAIProvider):
                 "Zhipu API key not found. "
                 "Set ZHIPU_API_KEY (or GLM_API_KEY) environment variable or pass api_key."
             )
-        self.client = OpenAI(api_key=key, base_url=self._BASE_URL)
+        from debug_mind.providers.base import HTTP_TIMEOUT_SECONDS
+
+        self.client = OpenAI(
+            api_key=key,
+            base_url=self._BASE_URL,
+            timeout=HTTP_TIMEOUT_SECONDS,
+            max_retries=0,
+        )
 
     @property
     def default_model(self) -> str:

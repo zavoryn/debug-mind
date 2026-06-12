@@ -36,7 +36,14 @@ class DeepSeekProvider(OpenAIProvider):
                 "Set DEEPSEEK_API_KEY environment variable or pass api_key."
             )
         # Bypass OpenAIProvider.__init__ and construct the client directly
-        self.client = OpenAI(api_key=key, base_url=self._BASE_URL)
+        from debug_mind.providers.base import HTTP_TIMEOUT_SECONDS
+
+        self.client = OpenAI(
+            api_key=key,
+            base_url=self._BASE_URL,
+            timeout=HTTP_TIMEOUT_SECONDS,
+            max_retries=0,
+        )
 
     @property
     def default_model(self) -> str:

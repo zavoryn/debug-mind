@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/python-3.10+-blue" alt="Python 3.10+" />
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" />
   <img src="https://img.shields.io/badge/MCP-compatible-purple" alt="MCP Compatible" />
-  <img src="https://img.shields.io/badge/tests-276_passed-brightgreen" alt="276 Tests" />
+  <img src="https://img.shields.io/badge/tests-282_passed-brightgreen" alt="282 Tests" />
   <img src="https://img.shields.io/badge/hit@1-0.92-orange" alt="hit@1=0.92" />
   <a href="https://github.com/zavoryn/debug-mind/actions/workflows/test.yml"><img src="https://github.com/zavoryn/debug-mind/actions/workflows/test.yml/badge.svg?branch=master" alt="tests" /></a>
   <a href="https://github.com/zavoryn/debug-mind/actions/workflows/lint.yml"><img src="https://github.com/zavoryn/debug-mind/actions/workflows/lint.yml/badge.svg?branch=master" alt="lint" /></a>
@@ -58,17 +58,22 @@
 
 ## 效果
 
-在 20 个真实 Bug 类型的评测基准上：
+检索基准（20 个种子用例）+ **记忆消融 A/B 实测**（50 个 bug 场景 × 有/无记忆两臂 × 3 次重复 = 300 次端到端运行，DeepSeek v4-flash，2026-06）：
 
 | 指标 | 数值 |
 |------|------|
-| hit@1（第一个结果命中正确根因） | **0.92** |
-| hit@3 | 0.97 |
-| 测试覆盖 | 276 个测试，0 失败 |
+| hit@1 / hit@3（检索还原正确根因） | **0.92** / 0.97 |
+| 重复类 Bug 正确率：无记忆 → 有记忆 | 72% → **83%**（+11pp） |
+| 推理错误（reasoning_error）次数 | 20 → 12（**−40%**） |
+| 全新类 Bug 正确率（无害性对照组） | 90% → 92%（记忆不误导未见过的 Bug） |
+| 自学习飞轮（空库起跑两轮，只靠自存经验） | 第 2 轮成本 **−17%**、步数 −10%、正确率持平 |
+| 稳定性：pass@3 / pass^3（同题 3 次全对） | 100% / **74%** |
+| 测试覆盖 | 282 个测试，0 失败 |
 
-> 检索评测方法：将已知 Bug 案例从库中隐藏，用症状描述查询，看检索结果是否能还原正确根因。
-> 记忆的端到端增益用消融实验测量：`debug-mind eval --ablation`（同一批 case，有记忆 vs 空库对照，报告轮数 / 成本 / 正确率差值）；
-> 经验飞轮用 `debug-mind eval --learning-curve` 测量（空库起跑两轮，第二轮只靠第一轮自己存下的经验）。详见 [`docs/EVALUATION.md`](docs/EVALUATION.md)。
+> 复现：`debug-mind eval --ablation --runs 3` 与 `debug-mind eval --learning-curve`，原始数据写入 `evaluation/results/`。
+> **诚实口径**：记忆买到的主要是**正确率**而不是墙钟速度——检索内容进上下文使单次 token 略增；
+> 步数下限被工作流卡住（必须先查记忆、最后存结论，~3 步起）。pass^3 = 74% 说明稳定性是已知短板，
+> 且两臂 flakiness gap 相同（26%），抖动来自模型与关键词评判，不来自记忆。详见 [`docs/EVALUATION.md`](docs/EVALUATION.md)。
 
 ---
 
@@ -334,7 +339,7 @@ Level 3（终态）
 - [x] 记忆生命周期：衰减、再验证、案例关联图
 - [x] 自愈闭环单机版：propose_patch 生成 diff → 沙箱跑测试 → 失败修法记为死路写回记忆
 - [x] 记忆消融 A/B（`eval --ablation`）+ pass^k 稳定性 + 自学习曲线（`eval --learning-curve`）
-- [x] 276 个测试 + CI/CD 工作流
+- [x] 282 个测试 + CI/CD 工作流
 
 **近期（Level 2）**
 - [ ] PyPI 正式发布（`pip install debug-mind`）
@@ -354,7 +359,7 @@ Level 3（终态）
 
 ```bash
 pip install -e ".[dev]"
-pytest                        # 276 个测试
+pytest                        # 282 个测试
 ruff check src/ tests/ evaluation/  # lint
 debug-mind eval --search-only # 检索质量评测（期望 hit@1 ≥ 0.85）
 ```

@@ -178,3 +178,38 @@ end-to-end, including the agent's own save quality.
 Results land in `evaluation/results/ablation_<ts>.json` and
 `self_learning_<ts>.json`.
 
+### Results (2026-06, deepseek-v4-flash, 50 cases × 2 arms × 3 runs)
+
+| arm / group | runs | correct | mean steps | p50 | mean time |
+|---|---:|---:|---:|---:|---:|
+| with memory — all | 150 | 90% | 3.91 | 4.0 | 42.2s |
+| with memory — repeat | 36 | **83%** | 3.78 | 3.5 | 41.7s |
+| with memory — novel | 114 | 92% | 3.95 | 4.0 | 42.4s |
+| no memory — all | 150 | 86% | 4.07 | 4.0 | 35.8s |
+| no memory — repeat | 36 | **72%** | 4.28 | 4.0 | 37.5s |
+| no memory — novel | 114 | 90% | 4.01 | 4.0 | 35.3s |
+
+Key findings:
+
+1. **Memory buys correctness, not wall-clock speed.** Repeat-class
+   correctness +11pp (72% → 83%); `reasoning_error` count dropped 20 → 12
+   (−40%) — retrieved root causes prevent wrong conclusions. Wall-clock is
+   slightly *slower* with memory (retrieved context = more tokens per
+   round), and steps have a workflow floor (~3: search → conclude → save).
+2. **The novel-class guard holds.** 90% → 92% on bug classes with no seed
+   in memory — retrieval noise does not mislead the agent.
+3. **Self-learning flywheel** (2 rounds from an empty store): round 2 cost
+   −17%, steps −10%, correctness flat (80% → 78%, 1-case noise). The
+   agent's self-saved cases buy efficiency but not the accuracy lift that
+   curated seeds give — write quality is the bottleneck, which is exactly
+   what the `verified` flag exists to fix.
+4. **Stability is the known weak spot.** pass@3 = 100% / 96% but
+   pass^3 = 74% / 70% (with/without memory); the 26% flakiness gap is
+   identical in both arms, so the jitter comes from model sampling and the
+   keyword judge, not from memory.
+
+Caveats: keyword-match judge (no LLM-as-judge); 2/300 ablation runs lost
+to infra failures (one HTTP hang exceeded the wall-clock budget — client
+timeouts can't be preempted by the loop-level guard); single provider
+(deepseek-v4-flash) — absolute numbers will shift on other models.
+

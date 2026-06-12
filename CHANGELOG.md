@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   measures the memory flywheel end-to-end
 
 ### Fixed
+- HTTP client-level timeout for all providers (`DEBUG_MIND_HTTP_TIMEOUT`,
+  default 120s) and SDK-internal retries disabled — the loop-level
+  wall-clock budget cannot preempt a hung request (observed: a single
+  network hang stretched one ablation run to 38 minutes)
 - Eval CLI now resolves the API key for the provider selected via
   `DEBUG_MIND_PROVIDER` instead of always requiring `ANTHROPIC_API_KEY`
 - Gracefully degraded agent runs (budget/API failures) are now classified as

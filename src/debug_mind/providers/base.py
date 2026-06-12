@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
+
+# HTTP-level guard. The loop-level wall-clock budget only checks *between*
+# rounds and cannot preempt a request that hangs at the network layer — a
+# 38-minute hang in the 2026-06 ablation run (SDK-internal retries stacking
+# on top of tenacity backoff) motivated this. SDK-internal retries are
+# disabled at client construction: the agent already retries via tenacity
+# using each provider's is_retryable().
+HTTP_TIMEOUT_SECONDS = float(os.environ.get("DEBUG_MIND_HTTP_TIMEOUT", "120"))
 
 
 @dataclass
