@@ -284,9 +284,9 @@ debug-mind web     # 启动 Gradio Web UI（默认端口 7860）
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `ANTHROPIC_API_KEY` | — | 必填 |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `ZHIPU_API_KEY` | — | 按所选 provider 设置 |
 | `DEBUG_MIND_BACKEND` | `sqlite` | `sqlite` 或 `chroma` |
-| `DEBUG_MIND_PROVIDER` | `anthropic` | `anthropic` 或 `openai` |
+| `DEBUG_MIND_PROVIDER` | `anthropic` | `anthropic`、`openai`、`deepseek`、`glm` / `zhipu` |
 | `DEBUG_MIND_MAX_COST` | `0.5` | 每次诊断最大 USD 花费 |
 | `DEBUG_MIND_MAX_TOKENS` | `50000` | 每次诊断最大 token 数 |
 | `DEBUG_MIND_MCP_TOKEN` | — | MCP 写操作鉴权 |

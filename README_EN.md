@@ -251,9 +251,9 @@ debug-mind web     # Launch Gradio web UI (default port 7860)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ANTHROPIC_API_KEY` | — | Required |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `ZHIPU_API_KEY` | — | Set according to the selected provider |
 | `DEBUG_MIND_BACKEND` | `sqlite` | `sqlite` or `chroma` |
-| `DEBUG_MIND_PROVIDER` | `anthropic` | `anthropic` or `openai` |
+| `DEBUG_MIND_PROVIDER` | `anthropic` | `anthropic`, `openai`, `deepseek`, `glm` / `zhipu` |
 | `DEBUG_MIND_MAX_COST` | `0.5` | Max USD per diagnosis |
 | `DEBUG_MIND_MAX_TOKENS` | `50000` | Max tokens per diagnosis |
 | `DEBUG_MIND_MCP_TOKEN` | — | Auth token for MCP write tools |

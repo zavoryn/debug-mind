@@ -5,7 +5,7 @@ from click.testing import CliRunner
 
 from debug_mind.cli import main
 from debug_mind.memory.store import MemoryStore
-from debug_mind.schemas import BugCase, Severity
+from debug_mind.schemas import BugCase, DiagnosisResult, Severity
 
 
 @pytest.fixture
@@ -127,6 +127,53 @@ class TestDiagnoseCommand:
         result = runner.invoke(main, ["diagnose", "some bug"])
         assert result.exit_code != 0
         assert "ANTHROPIC_API_KEY" in result.output or "Error" in result.output
+
+    def test_diagnose_uses_provider_specific_api_key(self, runner, memory_dir, monkeypatch):
+        monkeypatch.setenv("DEBUG_MIND_PROVIDER", "deepseek")
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-key")
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+        seen: dict[str, str | None] = {}
+
+        class FakeAgent:
+            def __init__(self, memory, project_path=None, api_key=None, **_kwargs):
+                seen["api_key"] = api_key
+
+            def diagnose(self, bug_description, error_log="", environment=None):
+                return DiagnosisResult(
+                    case_id="fake-case",
+                    root_cause="provider-specific key was accepted",
+                    confidence=1.0,
+                    diagnosis_steps=[],
+                    fix_suggestion="continue diagnosis",
+                )
+
+        monkeypatch.setattr("debug_mind.agent.DiagnosticAgent", FakeAgent)
+
+        result = runner.invoke(main, ["diagnose", "--no-stream", "some bug"])
+
+        assert result.exit_code == 0
+        assert seen["api_key"] == "deepseek-key"
+        assert "provider-specific key was accepted" in result.output
+
+    def test_diagnose_missing_provider_specific_api_key(self, runner, memory_dir, monkeypatch):
+        monkeypatch.setenv("DEBUG_MIND_PROVIDER", "deepseek")
+        monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+        result = runner.invoke(main, ["diagnose", "some bug"])
+
+        assert result.exit_code != 0
+        assert "DEEPSEEK_API_KEY" in result.output
+        assert "ANTHROPIC_API_KEY" not in result.output
+
+    def test_deepseek_provider_env_is_recognised(self, runner, memory_dir, monkeypatch):
+        monkeypatch.setenv("DEBUG_MIND_PROVIDER", "deepseek")
+
+        result = runner.invoke(main, ["search", "anything"])
+
+        assert result.exit_code == 0
+        assert "DEBUG_MIND_PROVIDER='deepseek' is not recognised" not in result.output
 
     def test_diagnose_invalid_project(self, runner, memory_dir):
         result = runner.invoke(
