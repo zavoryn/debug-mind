@@ -1,10 +1,35 @@
 """Tests for the DiagnosticAgent — tool dispatch and message building, no API calls."""
 
+from types import SimpleNamespace
+from unittest.mock import patch
+
 import pytest
 
 from debug_mind.agent import DiagnosticAgent, MEMORY_TOOLS, CODEBASE_TOOLS
 from debug_mind.memory.store import MemoryStore
-from debug_mind.schemas import BugCase, Severity
+from debug_mind.schemas import BugCase, BugStatus, Severity
+
+
+def _mock_response(text: str = "", tool_uses: list[dict] | None = None):
+    content = []
+    if text:
+        content.append(SimpleNamespace(type="text", text=text))
+    for tool_use in tool_uses or []:
+        content.append(
+            SimpleNamespace(
+                type="tool_use",
+                id=tool_use["id"],
+                name=tool_use["name"],
+                input=tool_use["input"],
+            )
+        )
+    usage = SimpleNamespace(
+        input_tokens=10,
+        output_tokens=5,
+        cache_read_input_tokens=0,
+        cache_creation_input_tokens=0,
+    )
+    return SimpleNamespace(content=content, usage=usage, stop_reason="end_turn")
 
 
 @pytest.fixture
@@ -208,3 +233,120 @@ class TestToolParamValidation:
 
         # No schema = no validation
         assert _validate_tool_params("any", {"x": 1}, {}) is None
+
+
+class TestPatchAttemptState:
+    def test_failed_patch_attempt_is_merged_into_save_to_memory(self, memory, tmp_path):
+        agent = DiagnosticAgent(
+            memory=memory,
+            project_path=str(tmp_path / "project"),
+            api_key="fake-key",
+        )
+        failed_diff = "--- a/calculator.py\n+++ b/calculator.py\n@@\n-return a * b\n+return 0\n"
+        failed_output = "AssertionError: expected 2, got 0"
+        captured_save_params: dict = {}
+
+        responses = [
+            _mock_response(
+                tool_uses=[
+                    {
+                        "id": "patch-1",
+                        "name": "apply_and_test",
+                        "input": {
+                            "file_path": "calculator.py",
+                            "patch_diff": failed_diff,
+                            "test_command": "pytest test_calculator.py",
+                        },
+                    }
+                ]
+            ),
+            _mock_response(
+                tool_uses=[
+                    {
+                        "id": "save-1",
+                        "name": "save_to_memory",
+                        "input": {
+                            "title": "calculator divide bug",
+                            "symptoms": "divide returns wrong result",
+                            "root_cause": "divide uses the wrong arithmetic operator",
+                            "fix_suggestion": "use division instead of multiplication",
+                        },
+                    }
+                ]
+            ),
+            _mock_response(text="final answer"),
+        ]
+
+        def fake_execute(name, params):
+            if name == "apply_and_test":
+                return (
+                    {
+                        "passed": False,
+                        "output": failed_output,
+                        "patch_diff": failed_diff,
+                        "return_code": 1,
+                    },
+                    "patch_test",
+                )
+            if name == "save_to_memory":
+                captured_save_params.update(params)
+                return {"saved": True, "case_id": "saved-case"}, "save"
+            return {"error": f"unexpected tool {name}"}, None
+
+        with patch.object(agent.provider, "create_message", side_effect=responses):
+            with patch.object(agent, "_execute_tool", side_effect=fake_execute):
+                agent.diagnose("divide returns wrong result")
+
+        attempts = captured_save_params["patch_attempts"]
+        assert len(attempts) == 1
+        assert attempts[0]["diff"] == failed_diff
+        assert attempts[0]["test_output"] == failed_output
+        assert attempts[0]["reason"] == "tests failed"
+
+    def test_failed_patch_attempt_is_saved_when_model_never_saves(self, memory, tmp_path):
+        agent = DiagnosticAgent(
+            memory=memory,
+            project_path=str(tmp_path / "project"),
+            api_key="fake-key",
+        )
+        failed_diff = "--- a/service.py\n+++ b/service.py\n@@\n-raise err\n+pass\n"
+        failed_output = "FAILED tests/test_service.py::test_error_is_not_swallowed"
+        responses = [
+            _mock_response(
+                tool_uses=[
+                    {
+                        "id": "patch-1",
+                        "name": "apply_and_test",
+                        "input": {
+                            "file_path": "service.py",
+                            "patch_diff": failed_diff,
+                            "test_command": "pytest tests/test_service.py",
+                        },
+                    }
+                ]
+            ),
+            _mock_response(text="The patch failed; no final fix yet."),
+        ]
+
+        def fake_execute(name, params):
+            if name == "apply_and_test":
+                return (
+                    {
+                        "passed": False,
+                        "output": failed_output,
+                        "patch_diff": failed_diff,
+                        "return_code": 1,
+                    },
+                    "patch_test",
+                )
+            return {"error": f"unexpected tool {name}"}, None
+
+        with patch.object(agent.provider, "create_message", side_effect=responses):
+            with patch.object(agent, "_execute_tool", side_effect=fake_execute):
+                result = agent.diagnose("service swallows errors")
+
+        saved = memory.get(result.case_id)
+        assert saved is not None
+        assert saved.status == BugStatus.UNRESOLVED
+        assert saved.patch_attempts[0]["diff"] == failed_diff
+        assert saved.patch_attempts[0]["test_output"] == failed_output

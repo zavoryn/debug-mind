@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/python-3.10+-blue" alt="Python 3.10+" />
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" />
   <img src="https://img.shields.io/badge/MCP-compatible-purple" alt="MCP Compatible" />
-  <img src="https://img.shields.io/badge/tests-295_passed-brightgreen" alt="295 Tests" />
+  <img src="https://img.shields.io/badge/tests-297_passed-brightgreen" alt="297 Tests" />
   <img src="https://img.shields.io/badge/hit@1-0.92-orange" alt="hit@1=0.92" />
   <a href="https://github.com/zavoryn/debug-mind/actions/workflows/test.yml"><img src="https://github.com/zavoryn/debug-mind/actions/workflows/test.yml/badge.svg?branch=master" alt="tests" /></a>
   <a href="https://github.com/zavoryn/debug-mind/actions/workflows/lint.yml"><img src="https://github.com/zavoryn/debug-mind/actions/workflows/lint.yml/badge.svg?branch=master" alt="lint" /></a>
@@ -52,7 +52,7 @@ DeepSeek v4-flash, 2026-06):
 | Novel-bug harmlessness control | 90% → 92% |
 | Self-learning flywheel | Round 2 cost **−17%**, steps −10%, accuracy flat |
 | Stability: pass@3 / pass^3 | 100% / **74%** |
-| Test suite | 295 tests, 0 failures |
+| Test suite | 297 tests, 0 failures |
 
 > Reproduce with `debug-mind eval --ablation --runs 3` and
 > `debug-mind eval --learning-curve`. Honest caveat: memory mainly improves
@@ -320,9 +320,9 @@ Level 3 (end state)
 - [x] SQLite / ChromaDB dual backend (switchable)
 - [x] Gradio web UI + multi-provider API key support
 - [x] Memory lifecycle: decay, reverify, case linking
-- [x] Single-machine self-healing loop: propose patch → sandbox test → record failed attempt
+- [x] Single-machine self-healing loop: propose patch → sandbox test → buffer failed patch in AgentRunState → record dead end
 - [x] Memory ablation A/B + pass^k stability + self-learning curve
-- [x] 295-test suite + CI/CD workflows
+- [x] 297-test suite + CI/CD workflows
 
 **Near-term (Level 2)**
 - [ ] PyPI release (`pip install debug-mind`)
@@ -342,7 +342,7 @@ Level 3 (end state)
 
 ```bash
 pip install -e ".[dev]"
-pytest                        # 295 tests
+pytest                        # 297 tests
 ruff check src/ tests/ evaluation/  # lint
 debug-mind eval --search-only # retrieval quality check (expects hit@1 ≥ 0.85)
 ```
