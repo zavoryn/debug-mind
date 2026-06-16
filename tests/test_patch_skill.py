@@ -175,6 +175,45 @@ def test_apply_and_test_does_not_modify_original(tmp_path):
     assert after_content == original_content, "apply_and_test must not modify the original project"
 
 
+def test_apply_and_test_rejects_paths_outside_project(tmp_path):
+    """Patch targets must stay inside the sandboxed project copy."""
+    proj = tmp_path / "project"
+    shutil.copytree(DEMO_PROJECT, proj)
+    outside_file = tmp_path / "outside.py"
+    outside_file.write_text(BUGGY_CONTENT, encoding="utf-8")
+
+    patch_result = propose_patch("calculator.py", BUGGY_CONTENT, FIXED_CONTENT)
+    result = apply_and_test(
+        file_path=str(outside_file),
+        patch_diff=patch_result["diff"],
+        test_command="pytest test_calculator.py",
+        project_path=str(proj),
+    )
+
+    assert result["passed"] is False
+    assert "inside the sandbox" in result["error"]
+    assert outside_file.read_text(encoding="utf-8") == BUGGY_CONTENT
+
+
+def test_apply_and_test_rejects_shell_metacharacters_in_test_command(tmp_path):
+    """Test commands come from the agent and must not execute shell operators."""
+    proj = tmp_path / "project"
+    shutil.copytree(DEMO_PROJECT, proj)
+    marker = tmp_path / "command_injection_marker.txt"
+
+    patch_result = propose_patch("calculator.py", BUGGY_CONTENT, FIXED_CONTENT)
+    result = apply_and_test(
+        file_path="calculator.py",
+        patch_diff=patch_result["diff"],
+        test_command=f'pytest test_calculator.py && echo owned > "{marker}"',
+        project_path=str(proj),
+    )
+
+    assert result["passed"] is False
+    assert "Unsafe test_command" in result["error"]
+    assert not marker.exists()
+
+
 # ── apply_and_test — missing file ────────────────────────────────────────────
 
 

@@ -16,6 +16,7 @@ import json
 import os
 import time
 import uuid
+from dataclasses import dataclass, field
 from typing import Any, Generator
 
 from debug_mind.schemas import BugCase, DiagnosisResult, BugStatus
@@ -70,6 +71,113 @@ Respond in the user's language. Be concise but thorough."""
 
 MEMORY_TOOLS = _MEMORY_TOOLS
 CODEBASE_TOOLS = _CODEBASE_TOOLS
+
+
+@dataclass
+class AgentRunState:
+    """Mutable state for one diagnosis run.
+
+    Keeping these fields together makes tool side effects explicit instead of
+    relying on scattered loop variables or the model remembering prior results.
+    """
+
+    diagnosis_steps: list[str] = field(default_factory=list)
+    saved_case_id: str | None = None
+    similar_case_ids: list[str] = field(default_factory=list)
+    failed_patch_attempts: list[dict[str, str]] = field(default_factory=list)
+
+    def input_for_tool(self, tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Return params augmented with buffered state when needed."""
+        if tool_name != "save_to_memory" or not self.failed_patch_attempts:
+            return params
+
+        merged = dict(params)
+        existing = merged.get("patch_attempts") or []
+        if not isinstance(existing, list):
+            existing = []
+        merged["patch_attempts"] = _merge_patch_attempts(
+            existing,
+            self.failed_patch_attempts,
+        )
+        return merged
+
+    def record_tool_result(
+        self,
+        tool_name: str,
+        params: dict[str, Any],
+        result: dict[str, Any],
+        side_effect: str | None,
+    ) -> None:
+        """Update run state after a tool finishes."""
+        if side_effect == "search":
+            self.similar_case_ids = [c["id"] for c in result.get("cases", [])]
+        elif side_effect == "save":
+            self.saved_case_id = result.get("case_id")
+
+        if tool_name == "apply_and_test" or side_effect == "patch_test":
+            attempt = _patch_attempt_from_result(params, result)
+            if attempt:
+                self.failed_patch_attempts = _merge_patch_attempts(
+                    self.failed_patch_attempts,
+                    [attempt],
+                )
+
+
+def _merge_patch_attempts(
+    existing: list[dict[str, Any]],
+    buffered: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    """Append buffered patch attempts without duplicating the same failed diff."""
+    merged: list[dict[str, str]] = [
+        {str(k): str(v) for k, v in item.items() if v is not None}
+        for item in existing
+        if isinstance(item, dict)
+    ]
+    seen = {
+        (item.get("diff", ""), item.get("test_output", ""), item.get("reason", ""))
+        for item in merged
+    }
+
+    for item in buffered:
+        key = (item.get("diff", ""), item.get("test_output", ""), item.get("reason", ""))
+        if key in seen:
+            continue
+        merged.append(dict(item))
+        seen.add(key)
+    return merged
+
+
+def _patch_attempt_from_result(
+    params: dict[str, Any],
+    result: dict[str, Any],
+) -> dict[str, str] | None:
+    """Build a durable failed patch attempt from apply_and_test output."""
+    if result.get("passed") is not False:
+        return None
+
+    diff = str(result.get("patch_diff") or params.get("patch_diff") or "")
+    test_output = str(result.get("output") or result.get("error") or "")
+    if not diff and not test_output:
+        return None
+
+    reason = str(result.get("error") or "tests failed")
+    attempt = {
+        "diff": diff,
+        "test_output": test_output,
+        "reason": reason,
+    }
+    return {k: v for k, v in attempt.items() if v}
+
+
+def _confidence_for_case(case: BugCase | None) -> float:
+    """Map persisted case status to user-facing diagnosis confidence."""
+    if case is None:
+        return 0.0
+    if case.status == BugStatus.UNRESOLVED:
+        return 0.0
+    if case.status in {BugStatus.REPORTED, BugStatus.DIAGNOSING}:
+        return 0.3
+    return 1.0
 
 
 class DiagnosticAgent:
@@ -257,9 +365,7 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
 
         user_message = self._build_user_message(bug_description, error_log, environment)
         messages: list[dict[str, Any]] = [{"role": "user", "content": user_message}]
-        diagnosis_steps: list[str] = []
-        saved_case_id: str | None = None
-        similar_case_ids: list[str] = []
+        state = AgentRunState()
 
         max_turns = 20
         max_wall_secs = float(os.environ.get("DEBUG_MIND_MAX_WALL_SECS", "300"))
@@ -277,11 +383,12 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
                 if stream:
                     yield ("thinking", f"\n[Timeout: diagnosis exceeded {max_wall_secs:.0f}s]")
                 partial = self._build_partial_result(
-                    diagnosis_steps,
-                    saved_case_id,
-                    similar_case_ids,
+                    state.diagnosis_steps,
+                    state.saved_case_id,
+                    state.similar_case_ids,
                     assistant_content=None,
                     budget_reason=f"wall-clock timeout ({max_wall_secs:.0f}s)",
+                    patch_attempts=state.failed_patch_attempts,
                 )
                 yield ("done", partial)
                 return
@@ -313,11 +420,12 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
                     yield ("thinking", f"\n[API Error: {e}]")
                 # Save partial diagnosis with what we have
                 partial = self._build_partial_result(
-                    diagnosis_steps,
-                    saved_case_id,
-                    similar_case_ids,
+                    state.diagnosis_steps,
+                    state.saved_case_id,
+                    state.similar_case_ids,
                     assistant_content=None,
                     budget_reason=f"API error: {e}",
+                    patch_attempts=state.failed_patch_attempts,
                 )
                 yield ("done", partial)
                 return
@@ -340,11 +448,12 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
                         yield ("thinking", f"\n[Budget exceeded: {reason}]")
                     # Save partial diagnosis before breaking
                     partial = self._build_partial_result(
-                        diagnosis_steps,
-                        saved_case_id,
-                        similar_case_ids,
+                        state.diagnosis_steps,
+                        state.saved_case_id,
+                        state.similar_case_ids,
                         assistant_content=None,
                         budget_reason=reason,
+                        patch_attempts=state.failed_patch_attempts,
                     )
                     yield ("done", partial)
                     return
@@ -364,11 +473,12 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
             # Execute tools
             tool_results = []
             for block in tool_use_blocks:
+                tool_input = state.input_for_tool(block.name, block.input)
                 if stream:
-                    yield ("tool_call", {"name": block.name, "input": block.input})
+                    yield ("tool_call", {"name": block.name, "input": tool_input})
 
                 t0 = time.monotonic()
-                result, side_effect = self._execute_tool(block.name, block.input)
+                result, side_effect = self._execute_tool(block.name, tool_input)
                 latency_ms = int((time.monotonic() - t0) * 1000)
 
                 _log.info(
@@ -393,13 +503,9 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
                     }
                 )
 
-                step_desc = f"{block.name}({json.dumps(block.input, ensure_ascii=False)[:120]})"
-                diagnosis_steps.append(step_desc)
-
-                if side_effect == "search":
-                    similar_case_ids = [c["id"] for c in result.get("cases", [])]
-                elif side_effect == "save":
-                    saved_case_id = result.get("case_id")
+                step_desc = f"{block.name}({json.dumps(tool_input, ensure_ascii=False)[:120]})"
+                state.diagnosis_steps.append(step_desc)
+                state.record_tool_result(block.name, tool_input, result, side_effect)
 
             messages.append({"role": "user", "content": tool_results})
 
@@ -407,24 +513,32 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
         final_text = "\n".join(
             b.text for b in assistant_content if hasattr(b, "text") and b.type == "text"
         )
-        saved_case = self.memory.get(saved_case_id) if saved_case_id else None
+        saved_case = self.memory.get(state.saved_case_id) if state.saved_case_id else None
 
         # D5: If final_text is empty (e.g. max_turns exhausted with all tool_use),
         # fall back to saved_case fields
         if not final_text and saved_case:
             final_text = f"Root cause: {saved_case.root_cause}\nFix: {saved_case.fix_suggestion}"
 
+        if not saved_case and state.failed_patch_attempts:
+            saved_case = self._save_unresolved_patch_attempts(
+                bug_description=bug_description,
+                error_log=error_log,
+                final_text=final_text,
+                state=state,
+            )
+
         # Mark adopted similar cases as used
-        for cid in similar_case_ids:
+        for cid in state.similar_case_ids:
             self.memory.mark_used(cid)
 
         diag = DiagnosisResult(
             case_id=saved_case.id if saved_case else "unknown",
             root_cause=saved_case.root_cause if saved_case else final_text,
-            confidence=1.0 if saved_case else 0.0,
-            diagnosis_steps=diagnosis_steps,
+            confidence=_confidence_for_case(saved_case),
+            diagnosis_steps=state.diagnosis_steps,
             fix_suggestion=saved_case.fix_suggestion if saved_case else "",
-            similar_cases_found=len(similar_case_ids),
+            similar_cases_found=len(state.similar_case_ids),
             reasoning=final_text,
         )
 
@@ -437,6 +551,7 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
         similar_case_ids: list[str],
         assistant_content: list | None,
         budget_reason: str,
+        patch_attempts: list[dict[str, str]] | None = None,
     ) -> DiagnosisResult:
         """Build a partial DiagnosisResult when budget is exceeded.
 
@@ -465,6 +580,7 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
                 status=BugStatus.UNRESOLVED,
                 diagnosis_steps=diagnosis_steps,
                 similar_case_ids=similar_case_ids,
+                patch_attempts=patch_attempts or [],
             )
             self.memory.save(case)
             saved_case = case
@@ -478,6 +594,34 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
             similar_cases_found=len(similar_case_ids),
             reasoning=reasoning,
         )
+
+    def _save_unresolved_patch_attempts(
+        self,
+        bug_description: str,
+        error_log: str,
+        final_text: str,
+        state: AgentRunState,
+    ) -> BugCase:
+        """Persist buffered failed patches when the model never saves them.
+
+        This is a safety net for the dead-end memory loop. The model still gets
+        the first chance to save a high-quality case; this method only writes a
+        minimal unresolved case so failed patch evidence is not lost.
+        """
+        case = BugCase(
+            title="Unresolved failed patch attempt",
+            symptoms=bug_description,
+            error_log=error_log,
+            root_cause=final_text or "Patch validation failed before a final diagnosis was saved",
+            fix_suggestion="Avoid repeating the recorded failed patch attempts.",
+            status=BugStatus.UNRESOLVED,
+            diagnosis_steps=state.diagnosis_steps,
+            similar_case_ids=state.similar_case_ids,
+            patch_attempts=state.failed_patch_attempts,
+        )
+        self.memory.save(case)
+        state.saved_case_id = case.id
+        return case
 
     def _execute_tool(self, name: str, params: dict) -> tuple[dict, str | None]:
         """Execute a single tool call by dispatching to the owning skill.
@@ -610,10 +754,10 @@ def _validate_tool_params(
 
     # 2. Check basic types for fields that are present
     type_errors: list[str] = []
-    for field, value in params.items():
-        if field not in properties or value is None:
+    for param_name, value in params.items():
+        if param_name not in properties or value is None:
             continue
-        expected_type_str = properties[field].get("type")
+        expected_type_str = properties[param_name].get("type")
         if not expected_type_str:
             continue
         expected_type = _SCHEMA_TYPE_MAP.get(expected_type_str)
@@ -621,7 +765,7 @@ def _validate_tool_params(
             continue
         if not isinstance(value, expected_type):
             type_errors.append(
-                f"'{field}' should be {expected_type_str}, got {type(value).__name__}"
+                f"'{param_name}' should be {expected_type_str}, got {type(value).__name__}"
             )
 
     if type_errors:

@@ -28,7 +28,7 @@ from typing import Optional
 from mcp.server.fastmcp import FastMCP
 
 from debug_mind.memory.store import MemoryStore
-from debug_mind.schemas import BugCase, Severity, BugStatus
+from debug_mind.schemas import BugCase, Severity, BugStatus, compact_patch_attempts
 
 mcp = FastMCP("debug-mind-memory")
 
@@ -135,6 +135,7 @@ def search_similar_bugs(
                 "tags": r.case.tags,
                 "verified": r.case.verified,
                 "hit_count": r.case.hit_count,
+                "patch_attempts": compact_patch_attempts(r.case.patch_attempts),
                 "from_namespace": r.from_namespace or memory.namespace,
             }
             for r in results
@@ -200,6 +201,7 @@ def save_bug_case(
     environment: Optional[dict[str, str]] = None,
     diagnosis_steps: Optional[list[str]] = None,
     similar_case_ids: Optional[list[str]] = None,
+    patch_attempts: Optional[list[dict[str, str]]] = None,
     auth_token: str = "",
     namespace: str = "default",
 ) -> str:
@@ -238,6 +240,7 @@ def save_bug_case(
         environment=sanitized_env,
         diagnosis_steps=diagnosis_steps or [],
         similar_case_ids=similar_case_ids or [],
+        patch_attempts=patch_attempts or [],
     )
 
     memory.save(case)

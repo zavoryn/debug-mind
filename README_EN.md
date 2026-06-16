@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/python-3.10+-blue" alt="Python 3.10+" />
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" />
   <img src="https://img.shields.io/badge/MCP-compatible-purple" alt="MCP Compatible" />
-  <img src="https://img.shields.io/badge/tests-198_passed-brightgreen" alt="198 Tests" />
+  <img src="https://img.shields.io/badge/tests-297_passed-brightgreen" alt="297 Tests" />
   <img src="https://img.shields.io/badge/hit@1-0.92-orange" alt="hit@1=0.92" />
   <a href="https://github.com/zavoryn/debug-mind/actions/workflows/test.yml"><img src="https://github.com/zavoryn/debug-mind/actions/workflows/test.yml/badge.svg?branch=master" alt="tests" /></a>
   <a href="https://github.com/zavoryn/debug-mind/actions/workflows/lint.yml"><img src="https://github.com/zavoryn/debug-mind/actions/workflows/lint.yml/badge.svg?branch=master" alt="lint" /></a>
@@ -40,15 +40,25 @@ Engineers spend roughly **20% of their time debugging**. A surprising amount of 
 
 ## Results
 
-Evaluated on 20 real-world bug types across Java, Python, Node.js, and Go:
+Retrieval benchmark on 20 seed cases plus memory ablation runs
+(50 bug scenarios × with/without memory × 3 repeats = 300 end-to-end runs,
+DeepSeek v4-flash, 2026-06):
 
 | Metric | Score |
 |--------|-------|
-| hit@1 (first result is the correct root cause) | **0.92** |
-| hit@3 | 0.97 |
-| Test suite | 198 tests, 0 failures |
+| hit@1 / hit@3 retrieval | **0.92** / 0.97 |
+| Repeated-bug accuracy: no memory → memory | 72% → **83%** (+11pp) |
+| Reasoning errors | 20 → 12 (**−40%**) |
+| Novel-bug harmlessness control | 90% → 92% |
+| Self-learning flywheel | Round 2 cost **−17%**, steps −10%, accuracy flat |
+| Stability: pass@3 / pass^3 | 100% / **74%** |
+| Test suite | 297 tests, 0 failures |
 
-> **How hit@1 is measured:** a known case is hidden from the database, then its symptom description is used as a query. If the top-ranked result matches the correct root cause, that's a hit. CI enforces hit@1 ≥ 0.85 on every push. See [`docs/EVALUATION.md`](docs/EVALUATION.md).
+> Reproduce with `debug-mind eval --ablation --runs 3` and
+> `debug-mind eval --learning-curve`. Honest caveat: memory mainly improves
+> correctness, not wall-clock latency; `pass^3 = 74%` exposes a known stability
+> gap from model sampling and the current keyword judge. See
+> [`docs/EVALUATION.md`](docs/EVALUATION.md).
 
 ---
 
@@ -116,7 +126,7 @@ Five independent layers, each replaceable:
 | Layer | Component | Role |
 |-------|-----------|------|
 | **Clients** | CLI · Web UI · MCP Client | Terminal, Gradio browser UI, MCP protocol (Claude Code / Desktop) |
-| **Agent** | DiagnosticAgent · ReAct loop | Tool-use driven reasoning; token / cost / wall-clock budget; Claude · GPT-4o |
+| **Agent** | DiagnosticAgent · ReAct loop | Tool-use driven reasoning; token / cost / wall-clock budget; Anthropic · OpenAI · DeepSeek · GLM |
 | **Skills** | ripgrep · tree-sitter | Code search, file reading, project structure analysis |
 | **Memory** | Hybrid Search · Embedding | 0.75×semantic vector + 0.25×lexical; verified/hit_count dynamic ranking |
 | **Storage** | SQLite · ChromaDB · Markdown | Zero-dep default; optional HNSW; Markdown is source of truth, git-trackable |
@@ -238,6 +248,9 @@ debug-mind link <A> <B> [--relation caused_by|variant|fixed_by]
 
 # Evaluation & audit
 debug-mind eval [--search-only]
+debug-mind eval --trajectory [--sample N]
+debug-mind eval --ablation [--runs K]
+debug-mind eval --learning-curve [--rounds N]
 debug-mind audit [--since 24h] [--op save|verify|delete]
 
 # Integrations
@@ -251,9 +264,9 @@ debug-mind web     # Launch Gradio web UI (default port 7860)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ANTHROPIC_API_KEY` | — | Required |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `ZHIPU_API_KEY` | — | Set according to the selected provider |
 | `DEBUG_MIND_BACKEND` | `sqlite` | `sqlite` or `chroma` |
-| `DEBUG_MIND_PROVIDER` | `anthropic` | `anthropic` or `openai` |
+| `DEBUG_MIND_PROVIDER` | `anthropic` | `anthropic`, `openai`, `deepseek`, `glm` / `zhipu` |
 | `DEBUG_MIND_MAX_COST` | `0.5` | Max USD per diagnosis |
 | `DEBUG_MIND_MAX_TOKENS` | `50000` | Max tokens per diagnosis |
 | `DEBUG_MIND_MCP_TOKEN` | — | Auth token for MCP write tools |
@@ -264,11 +277,19 @@ Full list in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 
 ## The Bigger Picture: From Diagnostic Tool to Autonomous Loop
 
-DebugMind today is **Level 1** — human-triggered, AI gives advice, human applies the fix. The real leverage is automating the entire chain:
+DebugMind today is **Level 1.5** — human-triggered, but the agent can generate
+a patch, run tests in a sandbox, and write failed attempts back as dead-end
+experience. The trigger and merge decision are still human-controlled:
 
 ```
-Level 1 (today)
+Level 1
   Human describes bug → AI diagnoses → Human fixes
+
+Level 1.5 (today)
+  Human describes bug → AI diagnoses → generates patch → sandbox test run
+                                                       ↓ pass        ↓ fail
+                                                Submit-ready fix   Record dead end,
+                                                                   try another route
 
 Level 2 (near-term)
   Alert/ticket fires → AI diagnoses automatically → Human reviews and merges
@@ -284,7 +305,7 @@ Level 3 (end state)
                                                   (instant recall next time)  (never repeat the same wrong path)
 ```
 
-**Failed attempts are as valuable as successes.** If the AI tries a fix and tests fail, that failed path is written to memory — the next similar bug won't repeat the same wrong approach. The knowledge base isn't just a "correct answers" library; it's a complete map of the diagnostic solution space, including dead ends.
+**Failed attempts are as valuable as successes.** If the AI tries a fix and tests fail, that failed path is written as low-confidence `UNRESOLVED` evidence — the next similar bug won't repeat the same wrong approach. The knowledge base isn't just a "correct answers" library; it's a complete map of the diagnostic solution space, including dead ends.
 
 ---
 
@@ -297,9 +318,11 @@ Level 3 (end state)
 - [x] Token/cost budget and wall-clock timeout
 - [x] Concurrent write safety (filelock)
 - [x] SQLite / ChromaDB dual backend (switchable)
-- [x] Gradio web UI + OpenAI provider support
+- [x] Gradio web UI + multi-provider API key support
 - [x] Memory lifecycle: decay, reverify, case linking
-- [x] 198-test suite + CI/CD workflows
+- [x] Single-machine self-healing loop: propose patch → sandbox test → buffer failed patch in AgentRunState → persist low-confidence dead-end memory
+- [x] Memory ablation A/B + pass^k stability + self-learning curve
+- [x] 297-test suite + CI/CD workflows
 
 **Near-term (Level 2)**
 - [ ] PyPI release (`pip install debug-mind`)
@@ -308,9 +331,9 @@ Level 3 (end state)
 - [ ] Community benchmark expansion (100+ real bug types)
 
 **Mid-term (Level 3)**
-- [ ] Autonomous fix executor: AI generates patch → sandbox test run → opens PR on pass
+- [ ] Open PR automatically when a sandbox-validated patch passes
 - [ ] Rollback mechanism: revert on test failure, re-queue ticket with escalation flag
-- [ ] Bidirectional memory writes: both successes and failed attempts feed the knowledge graph
+- [ ] Container-level sandbox for untrusted code execution
 - [ ] Multi-project namespaces + RBAC permission isolation
 
 ---
@@ -319,8 +342,8 @@ Level 3 (end state)
 
 ```bash
 pip install -e ".[dev]"
-pytest                        # 198 tests
-ruff check src/ tests/        # lint
+pytest                        # 297 tests
+ruff check src/ tests/ evaluation/  # lint
 debug-mind eval --search-only # retrieval quality check (expects hit@1 ≥ 0.85)
 ```
 

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import difflib
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -51,6 +52,8 @@ _SANDBOX_SKIP_DIRS = {
 
 # Hard cap on test run time (seconds)
 _TEST_TIMEOUT_SECS = 60
+
+_SHELL_METACHARS = ("&&", "||", ";", "|", ">", "<", "`", "$(", "\n", "\r")
 
 
 # ── Pure helper functions (no Skill dependency) ──────────────────────────────
@@ -127,7 +130,14 @@ def apply_and_test(
     try:
         _copy_project(project, sandbox)
 
-        target = sandbox / file_path
+        target, target_error = _resolve_sandbox_target(sandbox, file_path)
+        if target_error:
+            return {
+                "error": target_error,
+                "passed": False,
+                "patch_diff": patch_diff,
+            }
+
         if not target.exists():
             return {
                 "error": f"File not found in sandbox: {file_path}",
@@ -145,12 +155,15 @@ def apply_and_test(
 
         test_result = _run_tests(test_command, cwd=sandbox)
 
-        return {
+        result = {
             "passed": test_result["passed"],
             "output": test_result["output"],
             "patch_diff": patch_diff,
             "return_code": test_result["return_code"],
         }
+        if test_result.get("error"):
+            result["error"] = test_result["error"]
+        return result
 
     except Exception as exc:
         _log.warning("apply_and_test failed", extra={"err": str(exc)})
@@ -178,6 +191,25 @@ def _copy_project(src: Path, dst: Path) -> None:
             )
         else:
             shutil.copy2(item, dest_item)
+
+
+def _resolve_sandbox_target(sandbox: Path, file_path: str) -> tuple[Path | None, str | None]:
+    """Resolve a patch target and ensure it cannot escape the sandbox."""
+    if not file_path or not file_path.strip():
+        return None, "Patch target must be a non-empty relative path inside the sandbox"
+
+    raw_path = Path(file_path)
+    if raw_path.is_absolute():
+        return None, "Patch target must be a relative path inside the sandbox"
+
+    sandbox_root = sandbox.resolve()
+    target = (sandbox_root / raw_path).resolve()
+    try:
+        target.relative_to(sandbox_root)
+    except ValueError:
+        return None, "Patch target must stay inside the sandbox"
+
+    return target, None
 
 
 def _apply_diff(target_file: Path, diff_text: str) -> dict[str, Any]:
@@ -306,21 +338,19 @@ def _apply_hunk(lines: list[str], start_1indexed: int, hunk: list[str]) -> dict[
 
 
 def _run_tests(test_command: str, cwd: Path) -> dict[str, Any]:
-    """Run test_command in cwd using the current Python interpreter.
+    """Run a safe pytest command in cwd using the current Python interpreter.
 
-    Replaces bare `pytest` with `{sys.executable} -m pytest` so the correct
-    venv is always used — no dependency on PATH.
+    The command is supplied by the agent, so it is parsed into argv and executed
+    with shell=False. Only pytest entrypoints are accepted.
     """
-    cmd = test_command.strip()
-    if cmd.startswith("pytest"):
-        cmd = f"{sys.executable} -m {cmd}"
-    elif cmd.startswith("python "):
-        cmd = cmd.replace("python ", f"{sys.executable} ", 1)
+    cmd, error = _prepare_test_command(test_command)
+    if error:
+        return {"passed": False, "return_code": -1, "output": error, "error": error}
 
     try:
         proc = subprocess.run(
             cmd,
-            shell=True,
+            shell=False,
             capture_output=True,
             text=True,
             cwd=str(cwd),
@@ -341,6 +371,46 @@ def _run_tests(test_command: str, cwd: Path) -> dict[str, Any]:
         }
     except Exception as exc:
         return {"passed": False, "return_code": -1, "output": str(exc)}
+
+
+def _prepare_test_command(test_command: str) -> tuple[list[str] | None, str | None]:
+    """Convert an agent-provided test command into a safe argv list."""
+    raw = test_command.strip()
+    if not raw:
+        return None, "Unsafe test_command: command is empty"
+
+    if any(token in raw for token in _SHELL_METACHARS):
+        return None, "Unsafe test_command: shell operators are not allowed"
+
+    try:
+        parts = shlex.split(raw, posix=os.name != "nt")
+    except ValueError as exc:
+        return None, f"Unsafe test_command: cannot parse command: {exc}"
+
+    parts = [_strip_matching_quotes(part) for part in parts]
+    if not parts:
+        return None, "Unsafe test_command: command is empty"
+
+    executable = Path(parts[0]).name.lower()
+    if executable == "pytest":
+        return [sys.executable, "-m", "pytest", *parts[1:]], None
+
+    if executable in {"python", "python.exe", "python3", "python3.exe"}:
+        if len(parts) >= 3 and parts[1:3] == ["-m", "pytest"]:
+            return [sys.executable, "-m", "pytest", *parts[3:]], None
+
+    current_python = Path(sys.executable).name.lower()
+    if executable == current_python and len(parts) >= 3 and parts[1:3] == ["-m", "pytest"]:
+        return [sys.executable, "-m", "pytest", *parts[3:]], None
+
+    return None, "Unsafe test_command: only pytest commands are allowed"
+
+
+def _strip_matching_quotes(value: str) -> str:
+    """Remove one layer of matching quotes left by Windows shlex mode."""
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        return value[1:-1]
+    return value
 
 
 # ── Skill wrapper ─────────────────────────────────────────────────────────────

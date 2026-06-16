@@ -47,6 +47,17 @@ MEMORY_TOOLS = [
                 },
                 "diagnosis_steps": {"type": "array", "items": {"type": "string"}},
                 "similar_case_ids": {"type": "array", "items": {"type": "string"}},
+                "patch_attempts": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": {"type": "string"},
+                    },
+                    "description": (
+                        "Failed patch attempts to remember as dead ends. "
+                        "Each item should include diff, test_output, and reason."
+                    ),
+                },
             },
             "required": ["title", "symptoms", "root_cause", "fix_suggestion"],
         },

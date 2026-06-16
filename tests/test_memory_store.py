@@ -115,6 +115,26 @@ class TestMarkdownRoundtrip:
         assert parsed.root_cause == sample_case.root_cause
         assert len(parsed.diagnosis_steps) == len(sample_case.diagnosis_steps)
 
+    def test_roundtrip_preserves_patch_attempts(self, sample_case):
+        sample_case.patch_attempts = [
+            {
+                "diff": "--- a/calculator.py\n+++ b/calculator.py\n- return a * b\n+ return a / b\n",
+                "test_output": "FAILED test_calculator.py::test_divide",
+                "reason": "wrong arithmetic operator still failed regression test",
+            }
+        ]
+
+        md = _case_to_markdown(sample_case)
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".md", delete=False, encoding="utf-8"
+        ) as f:
+            f.write(md)
+            path = Path(f.name)
+
+        parsed = _markdown_to_case(path)
+        assert parsed is not None
+        assert parsed.patch_attempts == sample_case.patch_attempts
+
     def test_parse_example_file(self):
         example = Path(__file__).parent.parent / "memory" / "examples" / "example-redis-npe.md"
         if not example.exists():

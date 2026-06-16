@@ -34,6 +34,10 @@ from rich.table import Table
 from rich.text import Text
 
 from debug_mind.memory.store import MemoryStore, MemoryBusyError
+from debug_mind.providers.keys import (
+    KNOWN_PROVIDERS,
+    resolve_provider_api_key,
+)
 from debug_mind.schemas import BugCase, DiagnosisResult
 
 
@@ -75,7 +79,6 @@ def main(ctx: click.Context):
 
 _KNOWN_BACKENDS = {"chroma", "sqlite"}
 _KNOWN_EMBEDDINGS = {"default", "openai", "voyage", "bge"}
-_KNOWN_PROVIDERS = {"anthropic", "openai"}
 _KNOWN_LOG_FORMATS = {"text", "json"}
 
 
@@ -84,7 +87,7 @@ def _warn_invalid_env() -> None:
     checks = [
         ("DEBUG_MIND_BACKEND", os.environ.get("DEBUG_MIND_BACKEND"), _KNOWN_BACKENDS),
         ("DEBUG_MIND_EMBEDDING", os.environ.get("DEBUG_MIND_EMBEDDING"), _KNOWN_EMBEDDINGS),
-        ("DEBUG_MIND_PROVIDER", os.environ.get("DEBUG_MIND_PROVIDER"), _KNOWN_PROVIDERS),
+        ("DEBUG_MIND_PROVIDER", os.environ.get("DEBUG_MIND_PROVIDER"), KNOWN_PROVIDERS),
         ("DEBUG_MIND_LOG_FORMAT", os.environ.get("DEBUG_MIND_LOG_FORMAT"), _KNOWN_LOG_FORMATS),
     ]
     for var, val, valid in checks:
@@ -106,6 +109,16 @@ def _warn_invalid_env() -> None:
                 console.print(
                     f"[yellow]Warning:[/yellow] {float_var}={raw!r} — expected a number, got a string."
                 )
+
+
+def _provider_api_key() -> tuple[str | None, str]:
+    """Resolve the API key for the configured LLM provider.
+
+    Returns (key_or_none, expected_env_var) so CLI commands can print the
+    provider-correct setup hint instead of always asking for Anthropic.
+    """
+    key, key_env, _provider = resolve_provider_api_key()
+    return key, key_env
 
 
 @main.command()
@@ -205,10 +218,11 @@ def diagnose(
         console.print("\n[yellow]No similar cases found — performing full diagnosis.[/yellow]")
 
     # Step 2: Run agent
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    api_key, key_env = _provider_api_key()
     if not api_key:
-        console.print("[red]Error: ANTHROPIC_API_KEY not set.[/red]")
-        console.print("Create a .env file with: ANTHROPIC_API_KEY=your-key-here")
+        provider = os.environ.get("DEBUG_MIND_PROVIDER", "anthropic").lower()
+        console.print(f"[red]Error: {key_env} not set for provider '{provider}'.[/red]")
+        console.print(f"Create a .env file with: {key_env}=your-key-here")
         sys.exit(1)
 
     from debug_mind.agent import DiagnosticAgent
@@ -800,28 +814,13 @@ def audit(since: str, op: str | None):
     console.print(table)
 
 
-_PROVIDER_KEY_ENVS = {
-    "anthropic": ("ANTHROPIC_API_KEY",),
-    "openai": ("OPENAI_API_KEY",),
-    "deepseek": ("DEEPSEEK_API_KEY",),
-    "glm": ("ZHIPU_API_KEY", "GLM_API_KEY"),
-    "zhipu": ("ZHIPU_API_KEY", "GLM_API_KEY"),
-}
-
-
 def _eval_api_key() -> tuple[str | None, str]:
     """Resolve the API key for the provider chosen via DEBUG_MIND_PROVIDER.
 
     Returns (key_or_none, name_of_expected_env_var) so callers can print a
     provider-correct error instead of always demanding ANTHROPIC_API_KEY.
     """
-    provider = os.environ.get("DEBUG_MIND_PROVIDER", "anthropic").lower()
-    env_names = _PROVIDER_KEY_ENVS.get(provider, ("ANTHROPIC_API_KEY",))
-    for name in env_names:
-        key = os.environ.get(name)
-        if key:
-            return key, name
-    return None, env_names[0]
+    return _provider_api_key()
 
 
 @main.command()
@@ -835,7 +834,7 @@ def _eval_api_key() -> tuple[str | None, str]:
     "--trajectory",
     is_flag=True,
     help="Run end-to-end agent trajectory eval (steps/tokens/cost/correctness). "
-    "Requires ANTHROPIC_API_KEY — burns paid tokens.",
+    "Requires the configured provider API key — burns paid tokens.",
 )
 @click.option(
     "--sample",
@@ -847,7 +846,7 @@ def _eval_api_key() -> tuple[str | None, str]:
     "--ablation",
     is_flag=True,
     help="Memory ablation A/B: same cases with seeded vs empty memory. "
-    "LLM calls = cases × 2 × runs. Requires ANTHROPIC_API_KEY.",
+    "LLM calls = cases × 2 × runs. Requires the configured provider API key.",
 )
 @click.option(
     "--runs",
@@ -859,7 +858,8 @@ def _eval_api_key() -> tuple[str | None, str]:
     "--learning-curve",
     is_flag=True,
     help="Self-learning round-trip: run cases against an initially EMPTY store for "
-    "N rounds; the agent's own saves are the only memory. Requires ANTHROPIC_API_KEY.",
+    "N rounds; the agent's own saves are the only memory. "
+    "Requires the configured provider API key.",
 )
 @click.option(
     "--rounds",
@@ -905,9 +905,7 @@ def eval(
                 f"[bold blue]Memory ablation A/B: {n_cases} case(s) × 2 arms × "
                 f"{max(runs, 1)} run(s) = {total_calls} agent runs (paid API).[/bold blue]"
             )
-            report, path = run_ablation(
-                cases=cases, sample=sample_n, runs=runs, api_key=api_key
-            )
+            report, path = run_ablation(cases=cases, sample=sample_n, runs=runs, api_key=api_key)
             console.print(format_ablation(report))
         else:
             from evaluation.experiments import format_self_learning, run_self_learning

@@ -72,9 +72,7 @@ class TestToOpenAIMessages:
             {
                 "role": "assistant",
                 "content": [
-                    LLMContentBlock(
-                        type="tool_use", id="call_2", name="search_memory", input={}
-                    )
+                    LLMContentBlock(type="tool_use", id="call_2", name="search_memory", input={})
                 ],
             }
         ]

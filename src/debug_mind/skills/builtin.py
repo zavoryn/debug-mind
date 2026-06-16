@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from debug_mind.observability.logger import get_logger
-from debug_mind.schemas import BugCase, BugStatus, Severity
+from debug_mind.schemas import BugCase, BugStatus, Severity, compact_patch_attempts
 from debug_mind.skills.registry import Skill
 from debug_mind.tools.schemas import CODEBASE_TOOLS, MEMORY_TOOLS
 
@@ -56,6 +56,7 @@ class MemorySkill(Skill):
                             "tags": r.case.tags,
                             "verified": r.case.verified,
                             "hit_count": r.case.hit_count,
+                            "patch_attempts": compact_patch_attempts(r.case.patch_attempts),
                         }
                         for r in results
                     ],

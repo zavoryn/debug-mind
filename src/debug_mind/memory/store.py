@@ -48,6 +48,7 @@ _RE_SECTIONS: dict[str, re.Pattern] = {
         "Symptoms",
         "Root Cause",
         "Fix Suggestion",
+        "Patch Attempts",
         "Error Log",
         "Environment",
         "Diagnosis Steps",
@@ -250,6 +251,7 @@ class MemoryStore:
             sanitize_description,
             sanitize_error_log,
             sanitize_environment,
+            sanitize_patch_attempts,
             sanitize_tags,
         )
 
@@ -260,13 +262,18 @@ class MemoryStore:
         case.error_log = sanitize_error_log(case.error_log)
         case.environment = sanitize_environment(case.environment)
         case.tags = sanitize_tags(case.tags)
+        case.patch_attempts = sanitize_patch_attempts(case.patch_attempts)
+
+        # Embedding can be slow (model init / API fallback). Keep it outside the
+        # write lock so concurrent writers wait only for file/backend mutation.
+        precomputed_emb = self._embed([case.to_search_text()])[0]
 
         try:
             with self._lock:
                 case.updated_at = datetime.now(timezone.utc)
                 case.version = (case.version or 1) + 1
 
-                existing, precomputed_emb = self._find_dedup_target(case)
+                existing, precomputed_emb = self._find_dedup_target(case, embedding=precomputed_emb)
                 if existing:
                     return existing
 
@@ -281,7 +288,9 @@ class MemoryStore:
         _log.info("case saved", extra={"op": "save", "case_id": case.id})
         return case
 
-    def _find_dedup_target(self, case: BugCase) -> tuple[BugCase | None, list[float] | None]:
+    def _find_dedup_target(
+        self, case: BugCase, embedding: list[float] | None = None
+    ) -> tuple[BugCase | None, list[float] | None]:
         """Check if a verified case with high similarity already exists.
 
         Returns (existing_case, embedding) so the caller can reuse the embedding
@@ -292,10 +301,11 @@ class MemoryStore:
         """
         count = self.backend.count()
         if count == 0:
-            return None, None
+            return None, embedding
 
-        query_text = case.to_search_text()
-        embedding = self._embed([query_text])[0]
+        if embedding is None:
+            query_text = case.to_search_text()
+            embedding = self._embed([query_text])[0]
         results = self.backend.search(embedding, min(3, count))
 
         if not results:
@@ -798,6 +808,7 @@ def _case_to_markdown(case: BugCase) -> str:
     env_lines = "\n".join(f"- {k}: {v}" for k, v in case.environment.items())
     steps_lines = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(case.diagnosis_steps))
     tags_str = ", ".join(case.tags) if case.tags else "none"
+    patch_attempts_json = json.dumps(case.patch_attempts, ensure_ascii=False, indent=2)
 
     return f"""# {case.title}
 
@@ -822,6 +833,11 @@ def _case_to_markdown(case: BugCase) -> str:
 
 ## Fix Suggestion
 {case.fix_suggestion or "(pending)"}
+
+## Patch Attempts
+```json
+{patch_attempts_json}
+```
 
 ## Tags
 {tags_str}
@@ -882,6 +898,20 @@ def _markdown_to_case(path: Path) -> BugCase | None:
     case.symptoms = section("Symptoms")
     case.root_cause = section("Root Cause")
     case.fix_suggestion = section("Fix Suggestion")
+
+    patch_attempts_section = section("Patch Attempts")
+    if patch_attempts_section:
+        patch_attempts_json = _strip_json_fence(patch_attempts_section)
+        try:
+            raw_attempts = json.loads(patch_attempts_json) if patch_attempts_json else []
+        except json.JSONDecodeError:
+            raw_attempts = []
+        if isinstance(raw_attempts, list):
+            case.patch_attempts = [
+                {str(k): str(v) for k, v in item.items() if v is not None}
+                for item in raw_attempts
+                if isinstance(item, dict)
+            ]
 
     error_section = section("Error Log")
     case.error_log = (
@@ -964,3 +994,13 @@ def _markdown_to_case(path: Path) -> BugCase | None:
             pass
 
     return case
+
+
+def _strip_json_fence(text: str) -> str:
+    """Return JSON content from a fenced Markdown block or raw JSON text."""
+    lines = text.strip().splitlines()
+    if lines and lines[0].strip().startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].strip().startswith("```"):
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
