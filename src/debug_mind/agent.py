@@ -17,6 +17,7 @@ import os
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Generator
 
 from debug_mind.schemas import BugCase, DiagnosisResult, BugStatus
@@ -35,6 +36,7 @@ from debug_mind.observability.logger import get_logger, _try_otel_span
 from debug_mind.sanitize import sanitize_bug_input
 from debug_mind.providers.base import LLMProvider
 from debug_mind.providers.anthropic_provider import AnthropicProvider
+from debug_mind.hermes import HermesGovernance, validate_tool_params
 
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 
@@ -85,6 +87,7 @@ class AgentRunState:
     saved_case_id: str | None = None
     similar_case_ids: list[str] = field(default_factory=list)
     failed_patch_attempts: list[dict[str, str]] = field(default_factory=list)
+    hermes: HermesGovernance | None = None
 
     def input_for_tool(self, tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
         """Return params augmented with buffered state when needed."""
@@ -287,6 +290,20 @@ class DiagnosticAgent:
             reraise=True,
         )
 
+    def _create_hermes(self, trace_id: str) -> HermesGovernance:
+        """Create the per-run tool governance layer."""
+        trace_dir = os.environ.get("DEBUG_MIND_TRACE_DIR")
+        trace_path = (
+            Path(trace_dir) / f"{trace_id}.jsonl"
+            if trace_dir
+            else self.memory.memory_dir / "traces" / f"{trace_id}.jsonl"
+        )
+        return HermesGovernance(
+            tool_schemas=self._tool_schemas,
+            trace_path=trace_path,
+            trace_id=trace_id,
+        )
+
     def _call_provider(self, **kwargs):
         """Call the LLM provider with retry on transient errors."""
 
@@ -365,7 +382,7 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
 
         user_message = self._build_user_message(bug_description, error_log, environment)
         messages: list[dict[str, Any]] = [{"role": "user", "content": user_message}]
-        state = AgentRunState()
+        state = AgentRunState(hermes=self._create_hermes(trace_id))
 
         max_turns = 20
         max_wall_secs = float(os.environ.get("DEBUG_MIND_MAX_WALL_SECS", "300"))
@@ -477,9 +494,27 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
                 if stream:
                     yield ("tool_call", {"name": block.name, "input": tool_input})
 
-                t0 = time.monotonic()
-                result, side_effect = self._execute_tool(block.name, tool_input)
-                latency_ms = int((time.monotonic() - t0) * 1000)
+                decision = (
+                    state.hermes.inspect_tool_call(block.name, tool_input, _turn + 1)
+                    if state.hermes
+                    else None
+                )
+                if decision is not None and not decision.allowed:
+                    result = state.hermes.blocked_result(decision)
+                    side_effect = None
+                    latency_ms = 0
+                    _log.warning(
+                        "tool call blocked",
+                        extra={
+                            "trace_id": trace_id,
+                            "tool": block.name,
+                            "op": decision.reason,
+                        },
+                    )
+                else:
+                    t0 = time.monotonic()
+                    result, side_effect = self._execute_tool(block.name, tool_input)
+                    latency_ms = int((time.monotonic() - t0) * 1000)
 
                 _log.info(
                     "tool call",
@@ -506,6 +541,13 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
                 step_desc = f"{block.name}({json.dumps(tool_input, ensure_ascii=False)[:120]})"
                 state.diagnosis_steps.append(step_desc)
                 state.record_tool_result(block.name, tool_input, result, side_effect)
+                if state.hermes and decision is not None:
+                    state.hermes.record_tool_result(
+                        decision,
+                        result=result,
+                        side_effect=side_effect,
+                        latency_ms=latency_ms,
+                    )
 
             messages.append({"role": "user", "content": tool_results})
 
@@ -717,15 +759,6 @@ def _is_anchor_message(msg: dict[str, Any]) -> bool:
 # This is the same pattern MiniCode uses (zod schema validation before execution)
 # adapted for Python with a zero-dependency implementation.
 
-_SCHEMA_TYPE_MAP: dict[str, type] = {
-    "string": str,
-    "integer": int,
-    "number": (int, float),  # type: ignore[assignment]
-    "boolean": bool,
-    "array": list,
-    "object": dict,
-}
-
 
 def _validate_tool_params(
     tool_name: str,
@@ -735,43 +768,9 @@ def _validate_tool_params(
     """Validate LLM-generated tool params against the tool's input_schema.
 
     Returns an error message string if invalid, None if valid.
-    Intentionally lenient: only checks required fields and basic types.
-    Extra fields are allowed (LLMs sometimes add helpful extras).
+    Kept as a compatibility wrapper around Hermes validation.
     """
-    if not schema:
-        return None  # no schema to validate against, pass through
-
-    required: list[str] = schema.get("required", [])
-    properties: dict[str, Any] = schema.get("properties", {})
-
-    # 1. Check required fields are present and non-None
-    missing = [f for f in required if f not in params or params[f] is None]
-    if missing:
-        return (
-            f"Tool '{tool_name}' is missing required field(s): {missing}. "
-            f"Required: {required}. Got keys: {list(params.keys())}."
-        )
-
-    # 2. Check basic types for fields that are present
-    type_errors: list[str] = []
-    for param_name, value in params.items():
-        if param_name not in properties or value is None:
-            continue
-        expected_type_str = properties[param_name].get("type")
-        if not expected_type_str:
-            continue
-        expected_type = _SCHEMA_TYPE_MAP.get(expected_type_str)
-        if expected_type is None:
-            continue
-        if not isinstance(value, expected_type):
-            type_errors.append(
-                f"'{param_name}' should be {expected_type_str}, got {type(value).__name__}"
-            )
-
-    if type_errors:
-        return f"Tool '{tool_name}' parameter type error(s): {'; '.join(type_errors)}."
-
-    return None
+    return validate_tool_params(tool_name, params, schema)
 
 
 def _compress_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
