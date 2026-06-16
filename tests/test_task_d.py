@@ -126,6 +126,13 @@ class TestToolSchemaSingleSource:
         props = save_tool["input_schema"]["properties"]
         assert "similar_case_ids" in props
 
+    def test_save_to_memory_has_patch_attempts(self):
+        """save_to_memory must expose failed patch attempts as durable memory."""
+        save_tool = next(t for t in MEMORY_TOOLS if t["name"] == "save_to_memory")
+        props = save_tool["input_schema"]["properties"]
+        assert "patch_attempts" in props
+        assert props["patch_attempts"]["type"] == "array"
+
     def test_mcp_signatures_match_anthropic_schemas(self):
         """MCP function parameters must match the Anthropic-schema property names.
 

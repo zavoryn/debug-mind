@@ -15,6 +15,8 @@ _MAX_LOG = int(os.environ.get("DEBUG_MIND_MAX_LOG_SIZE", "16384"))
 _MAX_ENV_VALUE = int(os.environ.get("DEBUG_MIND_MAX_ENV_VALUE_SIZE", "256"))
 _MAX_ENV_KEYS = int(os.environ.get("DEBUG_MIND_MAX_ENV_KEYS", "20"))
 _MAX_TAGS = int(os.environ.get("DEBUG_MIND_MAX_TAGS", "20"))
+_MAX_PATCH_ATTEMPTS = int(os.environ.get("DEBUG_MIND_MAX_PATCH_ATTEMPTS", "5"))
+_MAX_PATCH_ATTEMPT_FIELD = int(os.environ.get("DEBUG_MIND_MAX_PATCH_ATTEMPT_FIELD_SIZE", "4096"))
 
 # Strip all ASCII control chars except \n (0x0A), \r (0x0D), \t (0x09)
 _CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
@@ -52,6 +54,35 @@ def sanitize_tags(tags: list[str]) -> list[str]:
     if len(tags) <= _MAX_TAGS:
         return tags
     return tags[:_MAX_TAGS]
+
+
+def sanitize_patch_attempts(
+    attempts: list[dict[str, str]],
+    max_attempts: int = _MAX_PATCH_ATTEMPTS,
+    max_field_chars: int = _MAX_PATCH_ATTEMPT_FIELD,
+) -> list[dict[str, str]]:
+    """Limit failed patch attempts before writing them to durable memory."""
+    if max_attempts <= 0 or max_field_chars <= 0:
+        return []
+
+    result: list[dict[str, str]] = []
+    for attempt in attempts[:max_attempts]:
+        if not isinstance(attempt, dict):
+            continue
+        cleaned: dict[str, str] = {}
+        for key, value in attempt.items():
+            if value is None:
+                continue
+            clean_key = _CTRL_RE.sub("", str(key))[:64]
+            if not clean_key:
+                continue
+            text = _CTRL_RE.sub("", str(value))
+            if len(text) > max_field_chars:
+                text = text[:max_field_chars] + "\n... [truncated]"
+            cleaned[clean_key] = text
+        if cleaned:
+            result.append(cleaned)
+    return result
 
 
 def sanitize_bug_input(

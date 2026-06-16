@@ -7,6 +7,7 @@ from debug_mind.sanitize import (
     sanitize_description,
     sanitize_error_log,
     sanitize_environment,
+    sanitize_patch_attempts,
     sanitize_tags,
     sanitize_bug_input,
 )
@@ -78,6 +79,26 @@ class TestSanitizeTags:
         result = sanitize_tags(tags)
         assert len(result) == 20
         assert result[0] == "tag0"
+
+
+class TestSanitizePatchAttempts:
+    def test_patch_attempts_are_limited_and_cleaned(self):
+        attempts = [
+            {
+                "diff": "d" * 20_000,
+                "test_output": "hello\x00\x01world",
+                "reason": "still fails",
+            },
+            {"diff": "second", "test_output": "failed", "reason": "extra"},
+        ]
+
+        result = sanitize_patch_attempts(attempts, max_attempts=1, max_field_chars=128)
+
+        assert len(result) == 1
+        assert len(result[0]["diff"]) <= 160
+        assert result[0]["diff"].endswith("[truncated]")
+        assert result[0]["test_output"] == "helloworld"
+        assert result[0]["reason"] == "still fails"
 
 
 class TestSanitizeBugInput:

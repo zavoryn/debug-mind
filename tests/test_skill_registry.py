@@ -112,6 +112,44 @@ class TestMemorySkill:
         assert tag == "search"
         assert "cases" in result
 
+    def test_save_and_search_exposes_patch_attempts(self, memory):
+        skill = MemorySkill()
+        attempts = [
+            {
+                "diff": "--- a/service.py\n+++ b/service.py\n- return None\n+ return user\n",
+                "test_output": "FAILED tests/test_login.py::test_empty_user",
+                "reason": "returned user without checking missing Redis token",
+            }
+        ]
+
+        save_result, save_tag = skill.execute(
+            "save_to_memory",
+            {
+                "title": "Login dead-end patch for Redis token",
+                "symptoms": "login fails when Redis token is missing",
+                "root_cause": "Redis token lookup can return None",
+                "fix_suggestion": "guard missing token before dereference",
+                "patch_attempts": attempts,
+                "tags": ["redis", "dead-end"],
+            },
+            {"memory": memory, "project_path": None},
+        )
+
+        assert save_tag == "save"
+        saved = memory.get(save_result["case_id"])
+        assert saved is not None
+        assert saved.patch_attempts == attempts
+
+        search_result, search_tag = skill.execute(
+            "search_memory",
+            {"query": "Redis token missing login dead-end patch"},
+            {"memory": memory, "project_path": None},
+        )
+
+        assert search_tag == "search"
+        assert search_result["found"] >= 1
+        assert search_result["cases"][0]["patch_attempts"] == attempts
+
 
 class TestCodebaseSkill:
     def test_no_tools_without_project(self, memory):

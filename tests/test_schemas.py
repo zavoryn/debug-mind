@@ -11,6 +11,7 @@ from debug_mind.schemas import (
     MemoryStats,
     Severity,
     BugStatus,
+    compact_patch_attempts,
 )
 
 
@@ -87,6 +88,29 @@ class TestBugCase:
         assert case.status == BugStatus.FIXED
         assert len(case.diagnosis_steps) == 2
         assert case.similar_case_ids == ["case002"]
+
+    def test_compact_patch_attempts_truncates_large_fields(self):
+        attempts = [
+            {
+                "diff": "x" * 80,
+                "test_output": "FAILED " + ("y" * 80),
+                "reason": "same regression still fails",
+                "return_code": "1",
+            },
+            {
+                "diff": "second attempt",
+                "test_output": "also failed",
+                "reason": "not included because max_items=1",
+            },
+        ]
+
+        compact = compact_patch_attempts(attempts, max_items=1, max_field_chars=32)
+
+        assert len(compact) == 1
+        assert compact[0]["reason"] == "same regression still fails"
+        assert compact[0]["return_code"] == "1"
+        assert compact[0]["diff"].endswith("...[truncated]")
+        assert compact[0]["test_output"].endswith("...[truncated]")
 
 
 class TestDiagnosisResult:

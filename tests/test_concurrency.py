@@ -81,6 +81,30 @@ class TestConcurrentSave:
             with pytest.raises(MemoryBusyError, match="[Mm]emory.*busy"):
                 store.save(case)
 
+    def test_embedding_runs_before_write_lock(self, tmp_path: Path) -> None:
+        """Slow embedding should not extend the write-lock critical section."""
+        events: list[str] = []
+
+        def embedding_fn(texts: list[str]) -> list[list[float]]:
+            events.append("embed")
+            return [[1.0] for _ in texts]
+
+        class RecordingLock:
+            def __enter__(self):
+                events.append("lock_enter")
+                return self
+
+            def __exit__(self, *_args):
+                events.append("lock_exit")
+                return False
+
+        store = MemoryStore(memory_dir=tmp_path / "mem", embedding_fn=embedding_fn)
+        store._lock = RecordingLock()
+
+        store.save(BugCase(title="lock-scope", symptoms="s"))
+
+        assert events.index("embed") < events.index("lock_enter")
+
     def test_delete_under_lock(self, tmp_path: Path) -> None:
         """Delete also acquires the lock."""
         store = MemoryStore(memory_dir=tmp_path / "mem")

@@ -109,6 +109,36 @@ class BugCase(BaseModel):
         return "\n".join(p for p in parts if p and not p.endswith(": "))
 
 
+def compact_patch_attempts(
+    patch_attempts: list[dict[str, str]],
+    max_items: int = 3,
+    max_field_chars: int = 600,
+) -> list[dict[str, str]]:
+    """Return patch attempts sized for tool/search responses.
+
+    Full diffs remain durable in Markdown. Search responses only need enough
+    evidence for the agent to avoid repeating a known-bad strategy.
+    """
+    if max_items <= 0 or max_field_chars <= 0:
+        return []
+
+    marker = "...[truncated]"
+    compact: list[dict[str, str]] = []
+    for attempt in patch_attempts[:max_items]:
+        if not isinstance(attempt, dict):
+            continue
+        item: dict[str, str] = {}
+        for key, value in attempt.items():
+            if value is None:
+                continue
+            text = str(value)
+            if len(text) > max_field_chars:
+                text = text[:max_field_chars] + marker
+            item[str(key)] = text
+        compact.append(item)
+    return compact
+
+
 class DiagnosisResult(BaseModel):
     """Output of a single diagnosis run — what the agent produces."""
 
