@@ -209,11 +209,14 @@ class JvmSkill(Skill):
                         "text": {
                             "type": "string",
                             "description": "Stack trace or error message text to match against.",
+                            "minLength": 1,
                         },
                         "top_k": {
                             "type": "integer",
                             "description": "Max patterns to return (default 3).",
                             "default": 3,
+                            "minimum": 1,
+                            "maximum": 10,
                         },
                     },
                     "required": ["text"],

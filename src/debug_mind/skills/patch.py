@@ -447,14 +447,17 @@ class PatchSkill(Skill):
                         "file_path": {
                             "type": "string",
                             "description": "Relative path to the file being fixed (e.g. 'src/utils.py').",
+                            "minLength": 1,
                         },
                         "original_content": {
                             "type": "string",
                             "description": "The current content of the file (as read by read_file).",
+                            "minLength": 1,
                         },
                         "fixed_content": {
                             "type": "string",
                             "description": "Your corrected version of the file content.",
+                            "minLength": 1,
                         },
                         "description": {
                             "type": "string",
@@ -478,10 +481,12 @@ class PatchSkill(Skill):
                         "file_path": {
                             "type": "string",
                             "description": "Relative path to the file being patched.",
+                            "minLength": 1,
                         },
                         "patch_diff": {
                             "type": "string",
                             "description": "Unified diff string from propose_patch.",
+                            "minLength": 1,
                         },
                         "test_command": {
                             "type": "string",
@@ -490,6 +495,7 @@ class PatchSkill(Skill):
                                 "or 'pytest tests/test_foo.py -v'. "
                                 "Use the most targeted test that covers the fixed code."
                             ),
+                            "minLength": 1,
                         },
                     },
                     "required": ["file_path", "patch_diff", "test_command"],

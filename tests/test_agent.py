@@ -1,5 +1,6 @@
 """Tests for the DiagnosticAgent — tool dispatch and message building, no API calls."""
 
+import json
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -351,3 +352,110 @@ class TestPatchAttemptState:
         assert result.confidence == 0.0
         assert saved.patch_attempts[0]["diff"] == failed_diff
         assert saved.patch_attempts[0]["test_output"] == failed_output
+
+
+class TestHermesAgentIntegration:
+    def test_duplicate_tool_call_is_blocked_before_skill_execution(self, memory, tmp_path):
+        agent = DiagnosticAgent(
+            memory=memory,
+            project_path=str(tmp_path / "project"),
+            api_key="fake-key",
+        )
+        duplicate_input = {"query": "redis timeout", "top_k": 3}
+        responses = [
+            _mock_response(
+                tool_uses=[
+                    {
+                        "id": "search-1",
+                        "name": "search_memory",
+                        "input": duplicate_input,
+                    }
+                ]
+            ),
+            _mock_response(
+                tool_uses=[
+                    {
+                        "id": "search-2",
+                        "name": "search_memory",
+                        "input": dict(reversed(list(duplicate_input.items()))),
+                    }
+                ]
+            ),
+            _mock_response(text="final answer"),
+        ]
+        executed_calls: list[tuple[str, dict]] = []
+
+        def fake_execute(name, params):
+            executed_calls.append((name, params))
+            return {"found": 0, "cases": []}, "search"
+
+        with patch.object(agent.provider, "create_message", side_effect=responses):
+            with patch.object(agent, "_execute_tool", side_effect=fake_execute):
+                result = agent.diagnose("redis timeout")
+
+        assert result.root_cause == "final answer"
+        assert executed_calls == [("search_memory", duplicate_input)]
+
+    def test_tool_governance_trace_is_written_for_agent_run(self, memory, tmp_path):
+        agent = DiagnosticAgent(
+            memory=memory,
+            project_path=str(tmp_path / "project"),
+            api_key="fake-key",
+        )
+        responses = [
+            _mock_response(
+                tool_uses=[
+                    {
+                        "id": "search-1",
+                        "name": "search_memory",
+                        "input": {"query": "redis timeout"},
+                    }
+                ]
+            ),
+            _mock_response(text="final answer"),
+        ]
+
+        with patch.object(agent.provider, "create_message", side_effect=responses):
+            with patch.object(
+                agent, "_execute_tool", return_value=({"found": 0, "cases": []}, "search")
+            ):
+                agent.diagnose("redis timeout")
+
+        trace_files = list((memory.memory_dir / "traces").glob("*.jsonl"))
+        assert len(trace_files) == 1
+        entries = [
+            json.loads(line)
+            for line in trace_files[0].read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        assert entries[0]["tool"] == "search_memory"
+        assert entries[0]["risk_level"] == "read"
+        assert entries[0]["decision"] == "allowed"
+        assert entries[0]["side_effect"] == "search"
+
+    def test_tool_governance_enforces_real_schema_bounds(self, memory, tmp_path):
+        agent = DiagnosticAgent(
+            memory=memory,
+            project_path=str(tmp_path / "project"),
+            api_key="fake-key",
+        )
+        responses = [
+            _mock_response(
+                tool_uses=[
+                    {
+                        "id": "search-1",
+                        "name": "search_memory",
+                        "input": {"query": "redis timeout", "top_k": 999},
+                    }
+                ]
+            ),
+            _mock_response(text="final answer"),
+        ]
+
+        with patch.object(agent.provider, "create_message", side_effect=responses):
+            with patch.object(
+                agent, "_execute_tool", return_value=({"found": 0, "cases": []}, "search")
+            ) as execute:
+                agent.diagnose("redis timeout")
+
+        execute.assert_not_called()

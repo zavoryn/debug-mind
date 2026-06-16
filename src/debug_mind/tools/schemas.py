@@ -13,11 +13,17 @@ MEMORY_TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "Bug symptoms, error, or keywords"},
+                "query": {
+                    "type": "string",
+                    "description": "Bug symptoms, error, or keywords",
+                    "minLength": 1,
+                },
                 "top_k": {
                     "type": "integer",
                     "description": "Max results (default 5)",
                     "default": 5,
+                    "minimum": 1,
+                    "maximum": 10,
                 },
             },
             "required": ["query"],
@@ -29,11 +35,27 @@ MEMORY_TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "title": {"type": "string", "description": "Short searchable title"},
-                "symptoms": {"type": "string", "description": "What was observed"},
+                "title": {
+                    "type": "string",
+                    "description": "Short searchable title",
+                    "minLength": 1,
+                },
+                "symptoms": {
+                    "type": "string",
+                    "description": "What was observed",
+                    "minLength": 1,
+                },
                 "error_log": {"type": "string", "description": "Raw error log or stack trace"},
-                "root_cause": {"type": "string", "description": "The identified root cause"},
-                "fix_suggestion": {"type": "string", "description": "How to fix it"},
+                "root_cause": {
+                    "type": "string",
+                    "description": "The identified root cause",
+                    "minLength": 1,
+                },
+                "fix_suggestion": {
+                    "type": "string",
+                    "description": "How to fix it",
+                    "minLength": 1,
+                },
                 "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
                 "tags": {
                     "type": "array",
@@ -71,7 +93,11 @@ CODEBASE_TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "pattern": {"type": "string", "description": "Search pattern (supports regex)"},
+                "pattern": {
+                    "type": "string",
+                    "description": "Search pattern (supports regex)",
+                    "minLength": 1,
+                },
                 "file_type": {
                     "type": "string",
                     "description": "File extension filter (e.g. 'java', 'py')",
@@ -86,16 +112,23 @@ CODEBASE_TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "file_path": {"type": "string", "description": "Relative path from project root"},
+                "file_path": {
+                    "type": "string",
+                    "description": "Relative path from project root",
+                    "minLength": 1,
+                },
                 "start_line": {
                     "type": "integer",
                     "description": "Start line (0-based, default 0)",
                     "default": 0,
+                    "minimum": 0,
                 },
                 "end_line": {
                     "type": "integer",
                     "description": "End line (default 100)",
                     "default": 100,
+                    "minimum": 1,
+                    "maximum": 2000,
                 },
             },
             "required": ["file_path"],
@@ -111,6 +144,8 @@ CODEBASE_TOOLS = [
                     "type": "integer",
                     "description": "Directory depth (default 3)",
                     "default": 3,
+                    "minimum": 1,
+                    "maximum": 8,
                 },
             },
         },
@@ -124,6 +159,7 @@ CODEBASE_TOOLS = [
                 "file_path": {
                     "type": "string",
                     "description": "Relative path to the source file from project root",
+                    "minLength": 1,
                 },
             },
             "required": ["file_path"],
