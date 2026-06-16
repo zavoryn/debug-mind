@@ -905,9 +905,7 @@ def eval(
                 f"[bold blue]Memory ablation A/B: {n_cases} case(s) × 2 arms × "
                 f"{max(runs, 1)} run(s) = {total_calls} agent runs (paid API).[/bold blue]"
             )
-            report, path = run_ablation(
-                cases=cases, sample=sample_n, runs=runs, api_key=api_key
-            )
+            report, path = run_ablation(cases=cases, sample=sample_n, runs=runs, api_key=api_key)
             console.print(format_ablation(report))
         else:
             from evaluation.experiments import format_self_learning, run_self_learning

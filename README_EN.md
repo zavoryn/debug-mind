@@ -305,7 +305,7 @@ Level 3 (end state)
                                                   (instant recall next time)  (never repeat the same wrong path)
 ```
 
-**Failed attempts are as valuable as successes.** If the AI tries a fix and tests fail, that failed path is written to memory — the next similar bug won't repeat the same wrong approach. The knowledge base isn't just a "correct answers" library; it's a complete map of the diagnostic solution space, including dead ends.
+**Failed attempts are as valuable as successes.** If the AI tries a fix and tests fail, that failed path is written as low-confidence `UNRESOLVED` evidence — the next similar bug won't repeat the same wrong approach. The knowledge base isn't just a "correct answers" library; it's a complete map of the diagnostic solution space, including dead ends.
 
 ---
 
@@ -320,7 +320,7 @@ Level 3 (end state)
 - [x] SQLite / ChromaDB dual backend (switchable)
 - [x] Gradio web UI + multi-provider API key support
 - [x] Memory lifecycle: decay, reverify, case linking
-- [x] Single-machine self-healing loop: propose patch → sandbox test → buffer failed patch in AgentRunState → record dead end
+- [x] Single-machine self-healing loop: propose patch → sandbox test → buffer failed patch in AgentRunState → persist low-confidence dead-end memory
 - [x] Memory ablation A/B + pass^k stability + self-learning curve
 - [x] 297-test suite + CI/CD workflows
 

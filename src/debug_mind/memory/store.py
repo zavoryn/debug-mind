@@ -273,9 +273,7 @@ class MemoryStore:
                 case.updated_at = datetime.now(timezone.utc)
                 case.version = (case.version or 1) + 1
 
-                existing, precomputed_emb = self._find_dedup_target(
-                    case, embedding=precomputed_emb
-                )
+                existing, precomputed_emb = self._find_dedup_target(case, embedding=precomputed_emb)
                 if existing:
                     return existing
 

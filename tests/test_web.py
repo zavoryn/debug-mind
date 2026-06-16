@@ -39,12 +39,15 @@ def test_web_diagnose_stream_passes_provider_key_to_agent(tmp_path, monkeypatch)
             seen["api_key"] = api_key
 
         def diagnose_stream(self, bug_description, error_log="", environment=None):
-            yield "done", DiagnosisResult(
-                case_id="web-case",
-                root_cause="provider key accepted",
-                confidence=1.0,
-                diagnosis_steps=[],
-                fix_suggestion="continue",
+            yield (
+                "done",
+                DiagnosisResult(
+                    case_id="web-case",
+                    root_cause="provider key accepted",
+                    confidence=1.0,
+                    diagnosis_steps=[],
+                    fix_suggestion="continue",
+                ),
             )
 
     monkeypatch.setattr("debug_mind.agent.DiagnosticAgent", FakeAgent)

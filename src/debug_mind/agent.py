@@ -118,9 +118,9 @@ class AgentRunState:
             attempt = _patch_attempt_from_result(params, result)
             if attempt:
                 self.failed_patch_attempts = _merge_patch_attempts(
-                self.failed_patch_attempts,
-                [attempt],
-            )
+                    self.failed_patch_attempts,
+                    [attempt],
+                )
 
 
 def _merge_patch_attempts(
@@ -167,6 +167,17 @@ def _patch_attempt_from_result(
         "reason": reason,
     }
     return {k: v for k, v in attempt.items() if v}
+
+
+def _confidence_for_case(case: BugCase | None) -> float:
+    """Map persisted case status to user-facing diagnosis confidence."""
+    if case is None:
+        return 0.0
+    if case.status == BugStatus.UNRESOLVED:
+        return 0.0
+    if case.status in {BugStatus.REPORTED, BugStatus.DIAGNOSING}:
+        return 0.3
+    return 1.0
 
 
 class DiagnosticAgent:
@@ -524,7 +535,7 @@ Diagnose this bug. Remember: search memory first, then inspect code if available
         diag = DiagnosisResult(
             case_id=saved_case.id if saved_case else "unknown",
             root_cause=saved_case.root_cause if saved_case else final_text,
-            confidence=1.0 if saved_case else 0.0,
+            confidence=_confidence_for_case(saved_case),
             diagnosis_steps=state.diagnosis_steps,
             fix_suggestion=saved_case.fix_suggestion if saved_case else "",
             similar_cases_found=len(state.similar_case_ids),

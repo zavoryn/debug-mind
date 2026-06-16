@@ -182,7 +182,7 @@ class TestToolParamValidation:
         result, side_effect = agent._execute_tool("search_memory", {})
         assert "error" in result
         assert "query" in result["error"]  # tells model which field is missing
-        assert "hint" in result            # nudges model to self-correct
+        assert "hint" in result  # nudges model to self-correct
         assert side_effect is None
 
     def test_wrong_type_returns_error_not_raise(self, agent):
@@ -348,5 +348,6 @@ class TestPatchAttemptState:
         saved = memory.get(result.case_id)
         assert saved is not None
         assert saved.status == BugStatus.UNRESOLVED
+        assert result.confidence == 0.0
         assert saved.patch_attempts[0]["diff"] == failed_diff
         assert saved.patch_attempts[0]["test_output"] == failed_output

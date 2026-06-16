@@ -239,9 +239,7 @@ def run_ablation(
                     else:
                         run_dir.mkdir(parents=True, exist_ok=True)
                     try:
-                        results.append(
-                            run_trajectory(case, run_dir, api_key=api_key, model=model)
-                        )
+                        results.append(run_trajectory(case, run_dir, api_key=api_key, model=model))
                     finally:
                         shutil.rmtree(run_dir, ignore_errors=True)
                 case_runs.append(
@@ -351,9 +349,7 @@ def _summarize_rounds(first: RoundReport, last: RoundReport) -> dict[str, float]
         "first_round_mean_cost_usd": f.mean_cost_usd,
         "last_round_mean_cost_usd": last_agg.mean_cost_usd,
         "delta_mean_cost_usd": round(last_agg.mean_cost_usd - f.mean_cost_usd, 6),
-        "delta_mean_time_seconds": round(
-            last_agg.mean_time_seconds - f.mean_time_seconds, 3
-        ),
+        "delta_mean_time_seconds": round(last_agg.mean_time_seconds - f.mean_time_seconds, 3),
     }
 
 
@@ -409,9 +405,7 @@ def run_self_learning(
         report.paired_deltas = _pair_rounds(round_reports[0], round_reports[-1])
         report.summary = _summarize_rounds(round_reports[0], round_reports[-1])
 
-    json_path = (
-        _write_experiment_json("self_learning", report.to_json()) if write_json else None
-    )
+    json_path = _write_experiment_json("self_learning", report.to_json()) if write_json else None
     return report, json_path
 
 
@@ -483,9 +477,7 @@ def format_ablation(report: AblationReport) -> str:
         lines.append("|---|---:|---:|---:|")
         for arm in (w, n):
             gap = round(arm.pass_at_k - arm.pass_hat_k, 4)
-            lines.append(
-                f"| {arm.arm} | {arm.pass_at_k:.0%} | {arm.pass_hat_k:.0%} | {gap:.0%} |"
-            )
+            lines.append(f"| {arm.arm} | {arm.pass_at_k:.0%} | {arm.pass_hat_k:.0%} | {gap:.0%} |")
     return "\n".join(lines)
 
 
@@ -521,7 +513,6 @@ def format_self_learning(report: SelfLearningReport) -> str:
     if report.paired_deltas:
         improved = sum(1 for p in report.paired_deltas if p["delta_steps"] < 0)
         lines.append(
-            f"- cases with fewer steps in final round: "
-            f"**{improved}/{len(report.paired_deltas)}**"
+            f"- cases with fewer steps in final round: **{improved}/{len(report.paired_deltas)}**"
         )
     return "\n".join(lines)

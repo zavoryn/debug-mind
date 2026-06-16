@@ -69,9 +69,7 @@ def to_openai_messages(
                         "type": "function",
                         "function": {
                             "name": part.get("name", ""),
-                            "arguments": json.dumps(
-                                part.get("input", {}), ensure_ascii=False
-                            ),
+                            "arguments": json.dumps(part.get("input", {}), ensure_ascii=False),
                         },
                     }
                 )
