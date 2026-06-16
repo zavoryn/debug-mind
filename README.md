@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/python-3.10+-blue" alt="Python 3.10+" />
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" />
   <img src="https://img.shields.io/badge/MCP-compatible-purple" alt="MCP Compatible" />
-  <img src="https://img.shields.io/badge/tests-282_passed-brightgreen" alt="282 Tests" />
+  <img src="https://img.shields.io/badge/tests-295_passed-brightgreen" alt="295 Tests" />
   <img src="https://img.shields.io/badge/hit@1-0.92-orange" alt="hit@1=0.92" />
   <a href="https://github.com/zavoryn/debug-mind/actions/workflows/test.yml"><img src="https://github.com/zavoryn/debug-mind/actions/workflows/test.yml/badge.svg?branch=master" alt="tests" /></a>
   <a href="https://github.com/zavoryn/debug-mind/actions/workflows/lint.yml"><img src="https://github.com/zavoryn/debug-mind/actions/workflows/lint.yml/badge.svg?branch=master" alt="lint" /></a>
@@ -68,7 +68,7 @@
 | 全新类 Bug 正确率（无害性对照组） | 90% → 92%（记忆不误导未见过的 Bug） |
 | 自学习飞轮（空库起跑两轮，只靠自存经验） | 第 2 轮成本 **−17%**、步数 −10%、正确率持平 |
 | 稳定性：pass@3 / pass^3（同题 3 次全对） | 100% / **74%** |
-| 测试覆盖 | 282 个测试，0 失败 |
+| 测试覆盖 | 295 个测试，0 失败 |
 
 > 复现：`debug-mind eval --ablation --runs 3` 与 `debug-mind eval --learning-curve`，原始数据写入 `evaluation/results/`。
 > **诚实口径**：记忆买到的主要是**正确率**而不是墙钟速度——检索内容进上下文使单次 token 略增；
@@ -140,7 +140,7 @@ DebugMind 分为五层，每层独立可替换：
 | 层级 | 组件 | 说明 |
 |------|------|------|
 | **客户端层** | CLI · Web UI · MCP Client | 命令行终端、Gradio 浏览器界面、MCP 协议接口（Claude Code / Desktop） |
-| **Agent 层** | DiagnosticAgent · ReAct 循环 | 工具调用式推理，token / 成本 / 挂钟三重预算；支持 Claude · GPT-4o |
+| **Agent 层** | DiagnosticAgent · ReAct 循环 | 工具调用式推理，token / 成本 / 挂钟三重预算；支持 Anthropic · OpenAI · DeepSeek · GLM |
 | **技能层** | ripgrep · tree-sitter | 代码搜索、文件读取、项目结构分析 |
 | **记忆层** | 混合检索 · Embedding | 0.75×语义向量 + 0.25×词法匹配；verified/hit_count 动态排序 |
 | **存储层** | SQLite · ChromaDB · Markdown | 默认纯 Python 零依赖；可选 HNSW 加速；Markdown 为数据源头可 git 追踪 |
@@ -335,11 +335,11 @@ Level 3（终态）
 - [x] Token/成本预算 + 挂钟超时
 - [x] 并发写安全（filelock）
 - [x] SQLite / ChromaDB 双后端
-- [x] Gradio Web UI + OpenAI provider 支持
+- [x] Gradio Web UI + 多 Provider API Key 支持
 - [x] 记忆生命周期：衰减、再验证、案例关联图
 - [x] 自愈闭环单机版：propose_patch 生成 diff → 沙箱跑测试 → 失败修法记为死路写回记忆
 - [x] 记忆消融 A/B（`eval --ablation`）+ pass^k 稳定性 + 自学习曲线（`eval --learning-curve`）
-- [x] 282 个测试 + CI/CD 工作流
+- [x] 295 个测试 + CI/CD 工作流
 
 **近期（Level 2）**
 - [ ] PyPI 正式发布（`pip install debug-mind`）
@@ -359,7 +359,7 @@ Level 3（终态）
 
 ```bash
 pip install -e ".[dev]"
-pytest                        # 282 个测试
+pytest                        # 295 个测试
 ruff check src/ tests/ evaluation/  # lint
 debug-mind eval --search-only # 检索质量评测（期望 hit@1 ≥ 0.85）
 ```

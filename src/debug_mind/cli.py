@@ -34,6 +34,10 @@ from rich.table import Table
 from rich.text import Text
 
 from debug_mind.memory.store import MemoryStore, MemoryBusyError
+from debug_mind.providers.keys import (
+    KNOWN_PROVIDERS,
+    resolve_provider_api_key,
+)
 from debug_mind.schemas import BugCase, DiagnosisResult
 
 
@@ -75,14 +79,6 @@ def main(ctx: click.Context):
 
 _KNOWN_BACKENDS = {"chroma", "sqlite"}
 _KNOWN_EMBEDDINGS = {"default", "openai", "voyage", "bge"}
-_PROVIDER_KEY_ENVS = {
-    "anthropic": ("ANTHROPIC_API_KEY",),
-    "openai": ("OPENAI_API_KEY",),
-    "deepseek": ("DEEPSEEK_API_KEY",),
-    "glm": ("ZHIPU_API_KEY", "GLM_API_KEY"),
-    "zhipu": ("ZHIPU_API_KEY", "GLM_API_KEY"),
-}
-_KNOWN_PROVIDERS = set(_PROVIDER_KEY_ENVS)
 _KNOWN_LOG_FORMATS = {"text", "json"}
 
 
@@ -91,7 +87,7 @@ def _warn_invalid_env() -> None:
     checks = [
         ("DEBUG_MIND_BACKEND", os.environ.get("DEBUG_MIND_BACKEND"), _KNOWN_BACKENDS),
         ("DEBUG_MIND_EMBEDDING", os.environ.get("DEBUG_MIND_EMBEDDING"), _KNOWN_EMBEDDINGS),
-        ("DEBUG_MIND_PROVIDER", os.environ.get("DEBUG_MIND_PROVIDER"), _KNOWN_PROVIDERS),
+        ("DEBUG_MIND_PROVIDER", os.environ.get("DEBUG_MIND_PROVIDER"), KNOWN_PROVIDERS),
         ("DEBUG_MIND_LOG_FORMAT", os.environ.get("DEBUG_MIND_LOG_FORMAT"), _KNOWN_LOG_FORMATS),
     ]
     for var, val, valid in checks:
@@ -121,13 +117,8 @@ def _provider_api_key() -> tuple[str | None, str]:
     Returns (key_or_none, expected_env_var) so CLI commands can print the
     provider-correct setup hint instead of always asking for Anthropic.
     """
-    provider = os.environ.get("DEBUG_MIND_PROVIDER", "anthropic").lower()
-    env_names = _PROVIDER_KEY_ENVS.get(provider, ("ANTHROPIC_API_KEY",))
-    for name in env_names:
-        key = os.environ.get(name)
-        if key:
-            return key, name
-    return None, env_names[0]
+    key, key_env, _provider = resolve_provider_api_key()
+    return key, key_env
 
 
 @main.command()

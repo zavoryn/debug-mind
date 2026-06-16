@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 
 from debug_mind.memory.store import MemoryStore
+from debug_mind.providers.keys import resolve_provider_api_key
 from debug_mind.schemas import BugCase, DiagnosisResult, Severity, BugStatus
 
 _EXAMPLE_QUERIES = [
@@ -180,6 +181,11 @@ def _get_memory(memory_dir: str | None = None) -> MemoryStore:
     return MemoryStore(memory_dir=Path(mem_dir))
 
 
+def _resolve_provider_api_key(api_key: str) -> tuple[str | None, str, str]:
+    """Resolve a UI-supplied or environment-provided provider API key."""
+    return resolve_provider_api_key(api_key)
+
+
 # ── Formatting helpers ─────────────────────────────────────────────────────
 
 
@@ -314,19 +320,18 @@ def _do_diagnose_stream(
         yield "⚠️ 请输入 Bug 描述。", "", gr.update(visible=False)
         return
 
-    key = api_key.strip() or os.environ.get("ANTHROPIC_API_KEY", "")
+    key, key_env, provider = _resolve_provider_api_key(api_key)
     if not key:
         yield (
             "⚠️ **需要 API Key。**\n\n"
-            "请在上方输入你的 Anthropic API Key 以启用 AI 诊断。\n"
-            "获取地址: [console.anthropic.com](https://console.anthropic.com)\n\n"
+            f"当前 provider 是 `{provider}`，请在上方输入对应 API Key，"
+            f"或设置环境变量 `{key_env}`。\n\n"
+            "`DEBUG_MIND_PROVIDER` 支持 `anthropic`、`openai`、`deepseek`、`glm` / `zhipu`。\n\n"
             "**提示：** 先在 **🎬 演示** 标签页体验完整推理流程，无需 Key。",
             "",
             gr.update(visible=False),
         )
         return
-
-    os.environ["ANTHROPIC_API_KEY"] = key
 
     env: dict[str, str] = {}
     if env_text.strip():
@@ -337,7 +342,7 @@ def _do_diagnose_stream(
 
     from debug_mind.agent import DiagnosticAgent
 
-    agent = DiagnosticAgent(memory=memory)
+    agent = DiagnosticAgent(memory=memory, api_key=key)
 
     steps: list[str] = []
     thinking_buf = ""
@@ -485,11 +490,12 @@ def launch_ui(port: int = 7860, share: bool = False, memory_dir: str | None = No
         title="DebugMind — AI Bug 诊断智能体",
         theme=gr.themes.Soft(),
     ) as app:
+        provider_name = os.environ.get("DEBUG_MIND_PROVIDER", "anthropic").lower()
         gr.Markdown(
             """# 🧠 DebugMind
 **记忆增强的 AI Bug 诊断智能体** — 诊断草稿经工程师验证后写入知识库，形成持续改善的闭环
 
-> **🎬 演示** 无需 API Key | **🤖 AI 诊断** 需要 Anthropic Key | **🔍 搜索** 直接检索知识库
+> **🎬 演示** 无需 API Key | **🤖 AI 诊断** 需要当前 Provider 的 API Key | **🔍 搜索** 直接检索知识库
 """
         )
 
@@ -581,13 +587,13 @@ def launch_ui(port: int = 7860, share: bool = False, memory_dir: str | None = No
         with gr.Tab("🤖 AI 诊断"):
             gr.Markdown(
                 "AI Agent 实时推理：**检索记忆 → 分析日志 → 输出根因 → 保存草稿**。"
-                "诊断完成后，请确认修复效果以完成闭环。需要 Anthropic API Key。"
+                f"诊断完成后，请确认修复效果以完成闭环。当前 provider: `{provider_name}`。"
             )
             api_key = gr.Textbox(
-                label="Anthropic API Key",
-                placeholder="sk-ant-...",
+                label="LLM API Key",
+                placeholder="sk-...",
                 type="password",
-                info="仅用于本次请求，不会被保存。",
+                info="仅用于本次请求，不会被保存；也可通过 provider 对应环境变量提供。",
             )
             desc = gr.Textbox(
                 label="Bug 描述",
