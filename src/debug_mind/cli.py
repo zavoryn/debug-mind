@@ -129,6 +129,12 @@ def _provider_api_key() -> tuple[str | None, str]:
 @click.option(
     "--severity", "-s", default="medium", type=click.Choice(["critical", "high", "medium", "low"])
 )
+@click.option(
+    "--interactive",
+    "-i",
+    is_flag=True,
+    help="HITL mode: confirm before dangerous tools (apply_and_test)",
+)
 @click.option("--no-stream", is_flag=True, help="Disable streaming output (show spinner instead)")
 @click.option("--max-cost", default=None, type=float, help="Max cost in USD (default 0.50)")
 @click.option("--max-tokens", default=None, type=int, help="Max cumulative tokens (default 50000)")
@@ -158,6 +164,7 @@ def diagnose(
     env: str,
     project: str,
     severity: str,
+    interactive: bool,
     no_stream: bool,
     max_cost: float | None,
     max_tokens: int | None,
@@ -255,6 +262,7 @@ def diagnose(
             budget=budget,
             no_retry=no_retry,
             skills=skill_names,
+            hitl=interactive,
         )
     except ValueError as e:
         console.print(f"[red]Error: {e}[/red]")

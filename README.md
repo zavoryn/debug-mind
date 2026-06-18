@@ -135,13 +135,15 @@ debug-mind web
   <img src="docs/架构图.png" alt="DebugMind Architecture" width="900" />
 </p>
 
-DebugMind 分为五层，每层独立可替换：
+DebugMind 按职责分层，每层独立可替换：
 
 | 层级 | 组件 | 说明 |
 |------|------|------|
 | **客户端层** | CLI · Web UI · MCP Client | 命令行终端、Gradio 浏览器界面、MCP 协议接口（Claude Code / Desktop） |
-| **Agent 层** | DiagnosticAgent · ReAct 循环 | 工具调用式推理，token / 成本 / 挂钟三重预算；支持 Anthropic · OpenAI · DeepSeek · GLM |
-| **技能层** | ripgrep · tree-sitter | 代码搜索、文件读取、项目结构分析 |
+| **引擎层** | DiagnosticAgent · ReAct 循环 | 工具调用式推理，token / 成本 / 挂钟三重预算；支持 Anthropic · OpenAI · DeepSeek · GLM |
+| **治理层（Hermes）** | 参数校验 · 风险分级 · 重复拦截 · HITL · trace | 夹在引擎与技能之间的工具边界；每次调用写 trajectory JSONL 可回放 |
+| **安全层（safety/）** | 风险分类 · 沙箱路径守卫 · 命令白名单 | 治理层与技能层共同依赖的安全基元，集中一处审计「Agent 能做什么、什么拦住它」 |
+| **技能层（Skill）** | memory · codebase · jvm · patch | 工具按能力包分组、按需加载；代码搜索、文件读取、补丁沙箱验证 |
 | **记忆层** | 混合检索 · Embedding | 0.75×语义向量 + 0.25×词法匹配；verified/hit_count 动态排序 |
 | **存储层** | SQLite · ChromaDB · Markdown | 默认纯 Python 零依赖；可选 HNSW 加速；Markdown 为数据源头可 git 追踪 |
 

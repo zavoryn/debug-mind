@@ -11,32 +11,14 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from enum import Enum
 from pathlib import Path
 from typing import Any
 
-
-class RiskLevel(str, Enum):
-    """Risk class for an agent tool call."""
-
-    READ = "read"
-    WRITE = "write"
-    DANGEROUS = "dangerous"
-    EXTERNAL = "external"
-    UNKNOWN = "unknown"
-
-
-DEFAULT_TOOL_RISK: dict[str, RiskLevel] = {
-    "search_memory": RiskLevel.READ,
-    "search_code": RiskLevel.READ,
-    "read_file": RiskLevel.READ,
-    "list_project_structure": RiskLevel.READ,
-    "parse_symbols": RiskLevel.READ,
-    "search_jvm_stack_pattern": RiskLevel.READ,
-    "propose_patch": RiskLevel.WRITE,
-    "save_to_memory": RiskLevel.WRITE,
-    "apply_and_test": RiskLevel.DANGEROUS,
-}
+# Risk classification lives in the safety layer. Re-exported here so existing
+# callers (and tests) can keep importing RiskLevel / DEFAULT_TOOL_RISK from
+# debug_mind.hermes — the governance layer consumes the policy, the safety
+# layer owns it.
+from debug_mind.safety.risk import DEFAULT_TOOL_RISK, RiskLevel
 
 _SCHEMA_TYPE_NAMES = {"string", "integer", "number", "boolean", "array", "object"}
 _REDACT_KEYS = {"api_key", "auth", "auth_token", "password", "secret", "token"}
@@ -67,12 +49,16 @@ class HermesGovernance:
         tool_risks: dict[str, RiskLevel] | None = None,
         trace_path: Path | str | None = None,
         trace_id: str | None = None,
+        hitl_mode: bool = False,
     ) -> None:
         self.tool_schemas = tool_schemas or {}
         self.tool_risks = {**DEFAULT_TOOL_RISK, **(tool_risks or {})}
         self.trace_path = Path(trace_path) if trace_path else None
         self.trace_id = trace_id or ""
+        self.hitl_mode = hitl_mode
         self._seen_fingerprints: dict[str, int] = {}
+        # Tools the user has approved for the rest of this session
+        self._session_approved: set[str] = set()
 
     def inspect_tool_call(
         self,
@@ -117,6 +103,14 @@ class HermesGovernance:
             )
 
         self._seen_fingerprints[fingerprint] = turn
+
+        # HITL: pause on DANGEROUS tools and ask the user
+        if self.hitl_mode and risk == RiskLevel.DANGEROUS:
+            if tool_name not in self._session_approved:
+                decision = self._ask_hitl(tool_name, params, turn, risk, fingerprint)
+                if decision is not None:
+                    return decision
+
         return ToolDecision(
             tool_name=tool_name,
             params=params,
@@ -126,11 +120,64 @@ class HermesGovernance:
             fingerprint=fingerprint,
         )
 
+    def _ask_hitl(
+        self,
+        tool_name: str,
+        params: dict[str, Any],
+        turn: int,
+        risk: RiskLevel,
+        fingerprint: str,
+    ) -> ToolDecision | None:
+        """Prompt the user to approve, deny, or always-allow a DANGEROUS tool call.
+
+        Returns a blocked ToolDecision if the user denies, None if approved.
+        """
+        import sys
+
+        summary = _summarize_mapping(params)
+        print(f"\n[Hermes] DANGEROUS tool requested — Turn {turn}", file=sys.stderr)
+        print(f"  Tool : {tool_name}", file=sys.stderr)
+        for k, v in summary.items():
+            v_str = str(v)
+            if len(v_str) > 120:
+                v_str = v_str[:120] + "..."
+            print(f"  {k:<12}: {v_str}", file=sys.stderr)
+        print("  Allow? [y]es / [n]o / [a]lways (this session): ", end="", file=sys.stderr)
+        sys.stderr.flush()
+
+        try:
+            choice = input().strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            choice = "n"
+
+        if choice in ("a", "always"):
+            self._session_approved.add(tool_name)
+            return None  # approved
+
+        if choice in ("y", "yes"):
+            return None  # approved once
+
+        # denied
+        return ToolDecision(
+            tool_name=tool_name,
+            params=params,
+            turn=turn,
+            allowed=False,
+            risk_level=risk,
+            reason="hitl_denied",
+            message=f"User denied '{tool_name}' at turn {turn}.",
+            fingerprint=fingerprint,
+        )
+
     def blocked_result(self, decision: ToolDecision) -> dict[str, Any]:
         """Build a tool_result payload the LLM can read and self-correct from."""
         hint = "Fix the parameters and retry this tool call."
         if decision.reason == "duplicate_tool_call":
             hint = "Use the previous result or change the query, file range, or patch."
+        elif decision.reason == "hitl_denied":
+            hint = (
+                "The human operator denied this action. Try a different approach or ask the user."
+            )
 
         return {
             "blocked": True,

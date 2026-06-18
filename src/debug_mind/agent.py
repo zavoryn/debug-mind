@@ -197,11 +197,13 @@ class DiagnosticAgent:
         no_retry: bool = False,
         skills: list[str] | None = None,
         skill_registry: SkillRegistry | None = None,
+        hitl: bool = False,
     ):
         self.memory = memory
         self.project_path = project_path
         self.budget = budget
         self.no_retry = no_retry
+        self.hitl = hitl
         # Provider: explicit > env choice > default Anthropic
         self.provider = provider or self._create_provider(api_key)
         self.model = model or self.provider.default_model
@@ -302,6 +304,7 @@ class DiagnosticAgent:
             tool_schemas=self._tool_schemas,
             trace_path=trace_path,
             trace_id=trace_id,
+            hitl_mode=self.hitl,
         )
 
     def _call_provider(self, **kwargs):
